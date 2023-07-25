@@ -32,6 +32,5 @@ func main() {
 	result := power(x, y)
 	println(result)
 	power(x, y)
-	countOccurrences(input)
 	fmt.Println(countOccurrences(input))
 }
