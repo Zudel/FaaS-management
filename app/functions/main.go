@@ -1,6 +1,15 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
+
+func waitTenSeconds() {
+	fmt.Println("Inizio attesa di 10 secondi...")
+	time.Sleep(15 * time.Second)
+	fmt.Println("Attesa completata!")
+}
 
 func countOccurrences(input string) []int {
 	occurrences := make([]int, 26) // Creazione di un array di interi per le 26 lettere dell'alfabeto inglese
@@ -33,4 +42,5 @@ func main() {
 	println(result)
 	power(x, y)
 	fmt.Println(countOccurrences(input))
+	waitTenSeconds()
 }
