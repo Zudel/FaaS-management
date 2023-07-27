@@ -43,4 +43,5 @@ func main() {
 	power(x, y)
 	fmt.Println(countOccurrences(input))
 	waitTenSeconds()
+
 }
