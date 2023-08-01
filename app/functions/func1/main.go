@@ -24,23 +24,13 @@ func countOccurrences(input string) []int {
 
 	return occurrences
 }
-func power(x int, y int) int {
-	result := 1
-	for i := 0; i < y; i++ {
-		result *= x
-	}
-	return result
-}
 
 func main() {
-	var x, y int
 	var input string
-	x = 2
-	y = 3
+	//the input was inserted by the user in the terminal
+	fmt.Println("Insert a string:")
+	fmt.Scanln(&input)
 	input = "Hello, World!"
-	result := power(x, y)
-	println(result)
-	power(x, y)
 	fmt.Println(countOccurrences(input))
 	waitTenSeconds()
 

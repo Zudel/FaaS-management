@@ -1,61 +1,86 @@
 import tkinter as tk
+from tkinter import StringVar
 import docker
 import time
+import yaml
+import os
 import threading
+import redis
+
+
+
+# Funzione per aggiornare il testo della finestra di output
+def update_output_text(text):
+    output_text.set(text)
 
 
 # Creazione dell'applicazione GUI
 app = tk.Tk()
 app.title("FaaS Management GUI")
 app.geometry("720x480")
-
-
 # Creazione di una etichetta per visualizzare il risultato
 label = tk.Label(app, text="welcome to my Faas management application!")
-label.grid(row=0, column=0)
-tk.Label(app, text="Hello, world!").grid(row=2, column=0)
-tk.Label(app, text="this is una cosa").grid(row=3, column=0)
+output_text = StringVar()
+output_text.set("Output qui")
 
-#text input 
-e1 = tk.Entry(app, width=50, borderwidth=5).grid(row=2, column=1)
-e2 = tk.Entry(app, width=50, borderwidth=5).grid(row=3, column=1)
 
 # Crea un'istanza del client Docker
 client = docker.from_env()
 
-# Specifica il percorso del Dockerfile (se non si trova nella directory corrente)
-dockerfile_path = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\functions"
+dockerfile_path_foo1 = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\functions\\func1"
+dockerfile_path_foo2 = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\functions\\func2"
+redis_path = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\redis"
 
-# Imposta il nome dell'immagine da costruire
-nome_immagine = "goimagine"  # Specifica il nome desiderato per l'immagine
+#functions pool to create the containers 
+image1 = client.images.build(path=dockerfile_path_foo1, tag="func1")
+image2 = client.images.build(path=dockerfile_path_foo2 , tag="func2")
+redis_image = client.images.build(path=redis_path, tag="redis:latest")
 
-# Costruisci l'immagine utilizzando il Dockerfile
-image = client.images.build(path=dockerfile_path, tag=nome_immagine)
-all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
-unused_containers = []
+#run a redis container
+options = {
+        "command": "redis-server",  # Comando da eseguire all'interno del container
+        "detach": True,  # Esegui il container in background
+    }
+redis_container = client.containers.run("redis", **options)
 
+# connect to redis
+try:
+    redis_client = redis.Redis(host='localhost', port=6379, db=0)
 
-def get_unused_containers():
- 
+except Exception as e:
+    print(e)
+    redis_container.stop()
+    redis_container.remove()
+
+def verify_container_status(containers):
+    f = False
+    for container in containers:
+        if container.status != "running":
+            f = True
+    return f
+
+def get_unused_container(all_containers):
     for container in all_containers:
         # Verifica se il container non sta eseguendo
         if container.status != 'running':
-            unused_containers.append(container)
-
-    return unused_containers
-
+            return container
+    return None
 
 
     
-def container_resource_metrics(container):
-     ferma_thread = False
-     while container.status == "running"  :
-        # Ottieni l'ID del container
+def container_resource_metrics(containers):
+    #remove the redis container from the list of containers
+    containers.remove(redis_container)
+    
+    
+    total_cpu_usage = 0
+    total_memory_usage = 0
+    
+    print("numero di container in esecuzione: " + str(len(containers)))
+    for container in containers:
         container_id = container.id
-
-        # Ottieni le informazioni del container
-        info_container = container.attrs
-        stats = container.stats(stream=False)
+        container_name = container.name
+        stats = container.stats(stream=False) #If stream set to false, only the current stats will be returned instead of a stream. True by default.
         #compute cpu usage
         UsageDelta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
         try:
@@ -72,41 +97,74 @@ def container_resource_metrics(container):
         mem_perc = round(memory_percentage, 2)
 
 
-        # Stampa le metriche ottenute
-        print(f"Metriche per il container (ID: {container_id}):")
+        # print the metrics
+        print(f"Metriche per il container "+ container_name +" (ID: {container_id}):")
         print("cpu usage: " + str(percentage) + "%")
         print("memory usage: " + str(mem_perc) + "%")
-        #print("container stats: " + str(container.stats(stream=False)) )
         print("stato del container: " + container.status)
         print("------------------------")
-       
-        time.sleep(1)
+    #wait 10 second before checking again the status of the container 
+    time.sleep(10)
 
-# Crea un thread per monitorare le risorse di ogni container
-for container in client.containers.list(all=False):
-    thread = threading.Thread(target=container_resource_metrics, args=(container,))
-    thread.start()
+# thread to check the status of the container
 
-def on_button_click():
+thread = threading.Thread(target=container_resource_metrics, args=(client.containers.list(all=False),))
+thread.start()
+
+#first function to start the container
+def on_button_click_function1():
     opzioni_creazione = {
         "command": "./main",  # Comando da eseguire all'interno del container
         "detach": True,  # Esegui il container in background
     }
-    if all_containers.__len__() == 0:
-        container = client.containers.run(nome_immagine, **opzioni_creazione)
-    else:
-        container = get_unused_containers()[len(unused_containers)-1]
-        print("container trovato")
-        print(container)
-        #delete the container in unused_containers
-        unused_containers.remove(container)
-        container.restart()
+    all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
+    matching_containers_foo1 = [container for container in all_containers if "func1:latest" in container.image.tags]
 
+    if get_unused_container(matching_containers_foo1) is None :
+        container = client.containers.run("func1", **opzioni_creazione)
+        matching_containers_foo1.append(container)
+        update_output_text("Container func1 avviato")
+    else: #if the container is not running restart the container
+        container = get_unused_container(matching_containers_foo1)
+        container.restart()
+        update_output_text("Container func1 avviato")
+
+#first function to start the container
+def on_button_click_function2():
+    opzioni_creazione = {
+        "command": "./foo2",  # Comando da eseguire all'interno del container
+        "detach": True,  # Esegui il container in background
+    }
+    all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
+    matching_containers_foo2 = [container for container in all_containers if "func2:latest" in container.image.tags]
     
-button = tk.Button(app, text="Click Me", command= on_button_click ).grid(row=4, column=5)
+    if get_unused_container(matching_containers_foo2) is None:
+        container = client.containers.run("func2", **opzioni_creazione)
+        update_output_text("Container func2 avviato")
+    else:
+        container = get_unused_container(matching_containers_foo2)
+        container.restart()
+        update_output_text("Container func2 avviato")
+
+label = tk.Label(app, text="Seleziona la funzione da avviare").grid(row=0, column=1)
+button = tk.Button(app, text="foo1", command= on_button_click_function1, padx=10, pady=5).grid(row=4, column=2)
+tk.Label(app, text="").grid(row=5, column=2)
+tk.Label(app, text="").grid(row=6, column=2)
+tk.Label(app, text="").grid(row=7, column=2)
+button2 = tk.Button(app, text="foo2", command= on_button_click_function2, padx=10, pady=5).grid(row=8, column=2)
+# Etichetta per la finestra di output
+output_label = tk.Label(app, textvariable=output_text)
+tk.Label(app, text="",padx=100, pady=5).grid(row=4, column=4)
+output_label.grid(row=4, column=7)
+
 
    
 # Esecuzione dell'applicazione
 app.mainloop()
-
-
+print('GUI closed')
+#create a loop for for close the container when the GUI is closed
+for container in client.containers.list(all=True):
+    container.stop()
+    print(container.name +" container stopped")
+    container.remove()
+    print(container.name + "container removed")

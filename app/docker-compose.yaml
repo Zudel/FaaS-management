@@ -1,0 +1,18 @@
+services:
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
+
+
+
