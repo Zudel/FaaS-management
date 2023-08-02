@@ -38,15 +38,14 @@ redis_image = client.images.build(path=redis_path, tag="redis:latest")
 
 #run a redis container
 options = {
-        "command": "redis-server",  # Comando da eseguire all'interno del container
+        "command": "redis-server" ,  # Comando da eseguire all'interno del container
         "detach": True,  # Esegui il container in background
+        "ports": {"6379": ("127.0.0.1", 6379)}  # Mappa la porta 6379 del container a 127.0.0.1:6379
     }
 redis_container = client.containers.run("redis", **options)
-
 # connect to redis
 try:
-    redis_client = redis.Redis(host='localhost', port=6379, db=0)
-
+    redis_client = redis.Redis(host='127.0.0.1', port=6379, db=0) 
 except Exception as e:
     print(e)
     redis_container.stop()
@@ -71,7 +70,6 @@ def get_unused_container(all_containers):
 def container_resource_metrics(containers):
     #remove the redis container from the list of containers
     containers.remove(redis_container)
-    
     
     total_cpu_usage = 0
     total_memory_usage = 0
