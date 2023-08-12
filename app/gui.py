@@ -18,7 +18,6 @@ def update_output_text(text):
 app = tk.Tk()
 app.title("FaaS Management GUI")
 app.geometry("720x480")
-# Creazione di una etichetta per visualizzare il risultato
 label = tk.Label(app, text="welcome to my Faas management application!")
 output_text = StringVar()
 output_text.set("Output qui")
@@ -35,6 +34,7 @@ redis_path = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\redis
 image1 = client.images.build(path=dockerfile_path_foo1, tag="func1")
 image2 = client.images.build(path=dockerfile_path_foo2 , tag="func2")
 redis_image = client.images.build(path=redis_path, tag="redis:latest")
+all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
 
 #run a redis container
 options = {
@@ -64,50 +64,71 @@ def get_unused_container(all_containers):
         if container.status != 'running':
             return container
     return None
-
-
     
 def container_resource_metrics(containers):
     #remove the redis container from the list of containers
-    containers.remove(redis_container)
     
-    total_cpu_usage = 0
-    total_memory_usage = 0
+    while True:
+        total_cpu_usage = 0
+        total_memory_usage = 0
+        if redis_container in containers:
+            containers.remove(redis_container)
     
-    print("numero di container in esecuzione: " + str(len(containers)))
-    for container in containers:
-        container_id = container.id
-        container_name = container.name
-        stats = container.stats(stream=False) #If stream set to false, only the current stats will be returned instead of a stream. True by default.
-        #compute cpu usage
-        UsageDelta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
-        try:
-            SystemDelta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
-        except KeyError:
-            return #return if the system_cpu_usage is not available
-        len_cpu = len( stats['cpu_stats']['cpu_usage']['percpu_usage'])
+        print("numero di container in esecuzione: " + str(len(containers)))
+        for container in client.containers.list(all=False):
+            container_id = container.id
+            container_name = container.name
+            stats = container.stats(stream=False) #If stream set to false, only the current stats will be returned instead of a stream. True by default.
         
-        percentage = (UsageDelta / SystemDelta) * len_cpu * 100
-        #compute memory usage
-        memory_usage = stats['memory_stats']['usage'] - stats['memory_stats']['stats']['cache']
-        memory_limit = stats['memory_stats']['limit']
-        memory_percentage = (memory_usage / memory_limit) * 100
-        mem_perc = round(memory_percentage, 2)
+            #compute cpu usage
+            UsageDelta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
+            try:
+                SystemDelta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
+            except KeyError:
+                return #return if the system_cpu_usage is not available
+            len_cpu = len( stats['cpu_stats']['cpu_usage']['percpu_usage'])
+            percentage = (UsageDelta / SystemDelta) * len_cpu * 100
+        
+            #compute memory usage
+            memory_usage = stats['memory_stats']['usage'] - stats['memory_stats']['stats']['cache']
+            memory_limit = stats['memory_stats']['limit']
+            memory_percentage = (memory_usage / memory_limit) * 100
+            mem_perc = round(memory_percentage, 2)
+            # print the metrics
+            print(f"Metriche per il container "+ container_name +" (ID: {container_id}):")
+            print("cpu usage: " + str(percentage) + "%")
+            print("memory usage: " + str(mem_perc) + "%")
+            print("stato del container: " + container.status)
+            print("------------------------")
+        #wait 10 second before checking again the status of the container 
+        time.sleep(10)
 
-
-        # print the metrics
-        print(f"Metriche per il container "+ container_name +" (ID: {container_id}):")
-        print("cpu usage: " + str(percentage) + "%")
-        print("memory usage: " + str(mem_perc) + "%")
-        print("stato del container: " + container.status)
-        print("------------------------")
-    #wait 10 second before checking again the status of the container 
+def cold_start(containers):
+    #remove the redis container from the list of containers
+    if redis_container in containers:
+        containers.remove(redis_container)
+    for container in containers:
+        if container.status == "exited" and redis_client.hget("cold_start", container.name) is None:
+            redis_client.hset("cold_start", container.name, time.time())
+        if container.status == "running" and redis_client.hget("cold_start", container.name) is not None:
+            redis_client.hdel("cold_start", container.name)
+        if container.status == "exited" and redis_client.hget("cold_start", container.name) is not None:
+            tempo = time.time() - float(redis_client.hget("cold_start", container.name))
+            if tempo > 20:
+                container.remove()
+                redis_client.hdel("cold_start", container.name)
+                print("container " + container.name + " removed")
+                print("tempo di inattività: " + str(tempo))
+                print("------------------------")
     time.sleep(10)
 
 # thread to check the status of the container
-
-thread = threading.Thread(target=container_resource_metrics, args=(client.containers.list(all=False),))
-thread.start()
+   
+thread1 = threading.Thread(target=container_resource_metrics, args=(client,))
+thread2 = threading.Thread(target=cold_start, args=(all_containers,))
+thread1.start()
+#thread2.start()        
+    
 
 #first function to start the container
 def on_button_click_function1():
@@ -154,10 +175,19 @@ button2 = tk.Button(app, text="foo2", command= on_button_click_function2, padx=1
 output_label = tk.Label(app, textvariable=output_text)
 tk.Label(app, text="",padx=100, pady=5).grid(row=4, column=4)
 output_label.grid(row=4, column=7)
+images = client.images.list()
+
+#remove all the dangling images 
+for image in images:
+    if not image.tags:
+        client.images.remove(image.id, force=True)
+for container in client.containers.list(all=True):
+    if not container.image.tags:
+        container.remove()
 
 
-   
-# Esecuzione dell'applicazione
+
+ 
 app.mainloop()
 print('GUI closed')
 #create a loop for for close the container when the GUI is closed
