@@ -6,6 +6,7 @@ import yaml
 import os
 import threading
 import redis
+from datetime import datetime
 
 
 # Funzione per aggiornare il testo della finestra di output
@@ -76,7 +77,7 @@ def retrieve_containers_offline(containers):
     
 def container_resource_metrics():
     #remove the redis container from the list of containers
-    time.sleep(7)
+    time.sleep(6)
     while True:
         active_containers = client.containers.list(all=False)
         containers = client.containers.list(all=True)
@@ -86,35 +87,67 @@ def container_resource_metrics():
         if nameRedisContainer in active_containers:
             active_containers.remove(nameRedisContainer)
         for container in active_containers:
-            print("numero di container istanziati: " + str(len(containers)-1))
-            print("numero di container in esecuzione: " + str(len(active_containers)-1))
+            print("numero di container istanziati: " + str(len(containers)-1)) #remove the redis container from the list of containers
+            print("numero di container in esecuzione: " + str(len(active_containers)-1)) #remove the redis container from the list of containers
             print("numero di container inattivi: " + str(len(containersOffline))) 
-            if nameRedisContainer not in container.name:
-                container_id = container.id
-                container_name = container.name
+            
+            container_id = container.id
+            container_name = container.name
+            print("nome del container: " + container_name)
+            print("stato del container: " + container.status)
+                
+            try:
+                print("stato del container: " + container.status)
                 stats = container.stats(stream = False) #If stream set to false, only the current stats will be returned instead of a stream. True by default.
-        
-                #compute cpu usage
+                    
                 UsageDelta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
-                try:
-                    SystemDelta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
-                except KeyError:
-                    return #return if the system_cpu_usage is not available
+                SystemDelta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
                 len_cpu  = len( stats['cpu_stats']['cpu_usage']['percpu_usage'])
-                percentage = (UsageDelta / SystemDelta) * len_cpu * 100
-        
                 #compute memory usage
                 memory_usage = stats['memory_stats']['usage'] - stats['memory_stats']['stats']['cache']
                 memory_limit = stats['memory_stats']['limit']
+                percentage = (UsageDelta / SystemDelta) * len_cpu * 100
                 memory_percentage = (memory_usage / memory_limit) * 100
                 mem_perc = round(memory_percentage, 2)
-                # print the metrics
+            except KeyError:
+                continue   
+                
+                
+                # print the metrics for each container
                 print(f"Metriche per il container "+ container_name +" (ID: {container_id}):")
                 print("cpu usage: " + str(percentage) + "%")
                 print("memory usage: " + str(mem_perc) + "%")
                 print("stato del container: " + container.status)
                 print("------------------------")
-            #wait 10 second before checking again the status of the container 
+
+            #compute the total cpu usage and the total memory usage
+                total_cpu_usage = total_cpu_usage + percentage
+                total_memory_usage = total_memory_usage + mem_perc
+            time.sleep(1)
+         # after the for loop print the total cpu usage and the total memory usage 
+        print("total cpu usage: " + str(total_cpu_usage) + "%")
+        print("total memory usage: " + str(total_memory_usage) + "%")
+        print("------------------------")
+        #insert the metrics in redis 
+        redis_client.hset("metrics", "total_cpu_usage", total_cpu_usage)
+        redis_client.hset("metrics", "total_memory_usage", total_memory_usage)
+        redis_client.hset("metrics", "number_of_containers", len(containers)-1)
+        redis_client.hset("metrics", "number_of_active_containers", len(active_containers)-1)
+        redis_client.hset("metrics", "number_of_inactive_containers", len(containersOffline))
+        redis_client.hset("metrics", "timestamp", time.time())
+        # Crea un oggetto datetime dal timestamp
+        datetime_obj = datetime.fromtimestamp(time.time())
+        # Formatta l'oggetto datetime in una stringa leggibile
+        human_readable_time = datetime_obj.strftime('%Y-%m-%d %H:%M:%S')     
+
+        # write the metrics in a file csv 
+        with open('metrics.csv', 'a') as f:
+            #header 
+            f.write("total_cpu_usage,total_memory_usage,number_of_containers,number_of_active_containers,number_of_inactive_containers,timestamp\n")
+            f.write(str(total_cpu_usage) + "," + str(total_memory_usage) + "," + str(len(containers)-1) + "," + str(len(active_containers)-1) + "," + str(len(containersOffline)) + "," + str(human_readable_time) + "\n")
+        f.close()
+
+        #check if the container is inactive for more than 20 seconds       
         
         for container in containersOffline:
             if containersOffline is None:
@@ -130,12 +163,12 @@ def container_resource_metrics():
                     redis_client.hdel("cold_start", container.name)
                     print("container " + container.name + " removed")
                     print("tempo di inattività: " + str(tempo) + " secondi")
-                    print("------------------------")
-        time.sleep(2)     
+                    print("------------------------")    
         #crea un if che se viene chiusa l'aplicazione termina il thread
         if killThread == True:
             break
 
+killThread = False
 thread1 = threading.Thread(target=container_resource_metrics, args=())
 thread1.start()    
     
@@ -205,3 +238,9 @@ for container in client.containers.list(all=True):
     print(container.name +" container stopped")
     container.remove()
     print(container.name + "container removed")
+# Elimina il file
+try:
+    os.remove('metrics.csv')
+    print(f"Il file metrics è stato eliminato con successo.")
+except OSError as e:
+    print(f"Si è verificato un errore durante l'eliminazione del file: {e}")
