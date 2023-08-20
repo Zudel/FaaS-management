@@ -8,7 +8,6 @@ import threading
 import redis
 
 
-
 # Funzione per aggiornare il testo della finestra di output
 def update_output_text(text):
     output_text.set(text)
@@ -43,6 +42,8 @@ options = {
         "ports": {"6379": ("127.0.0.1", 6379)}  # Mappa la porta 6379 del container a 127.0.0.1:6379
     }
 redis_container = client.containers.run("redis", **options)
+nameRedisContainer = redis_container.name
+
 # connect to redis
 try:
     redis_client = redis.Redis(host='127.0.0.1', port=6379, db=0) 
@@ -64,70 +65,79 @@ def get_unused_container(all_containers):
         if container.status != 'running':
             return container
     return None
+
+def retrieve_containers_offline(containers):
+    offline_containers = []
+    for container in containers:
+        if container.status == "exited":
+            offline_containers.append(container)
+    return offline_containers
+
     
-def container_resource_metrics(containers):
+def container_resource_metrics():
     #remove the redis container from the list of containers
-    
+    time.sleep(7)
     while True:
+        active_containers = client.containers.list(all=False)
+        containers = client.containers.list(all=True)
+        containersOffline = retrieve_containers_offline(containers)
         total_cpu_usage = 0
         total_memory_usage = 0
-        if redis_container in containers:
-            containers.remove(redis_container)
-    
-        print("numero di container in esecuzione: " + str(len(containers)))
-        for container in client.containers.list(all=False):
-            container_id = container.id
-            container_name = container.name
-            stats = container.stats(stream=False) #If stream set to false, only the current stats will be returned instead of a stream. True by default.
+        if nameRedisContainer in active_containers:
+            active_containers.remove(nameRedisContainer)
+        for container in active_containers:
+            print("numero di container istanziati: " + str(len(containers)-1))
+            print("numero di container in esecuzione: " + str(len(active_containers)-1))
+            print("numero di container inattivi: " + str(len(containersOffline))) 
+            if nameRedisContainer not in container.name:
+                container_id = container.id
+                container_name = container.name
+                stats = container.stats(stream = False) #If stream set to false, only the current stats will be returned instead of a stream. True by default.
         
-            #compute cpu usage
-            UsageDelta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
-            try:
-                SystemDelta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
-            except KeyError:
-                return #return if the system_cpu_usage is not available
-            len_cpu = len( stats['cpu_stats']['cpu_usage']['percpu_usage'])
-            percentage = (UsageDelta / SystemDelta) * len_cpu * 100
+                #compute cpu usage
+                UsageDelta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
+                try:
+                    SystemDelta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
+                except KeyError:
+                    return #return if the system_cpu_usage is not available
+                len_cpu  = len( stats['cpu_stats']['cpu_usage']['percpu_usage'])
+                percentage = (UsageDelta / SystemDelta) * len_cpu * 100
         
-            #compute memory usage
-            memory_usage = stats['memory_stats']['usage'] - stats['memory_stats']['stats']['cache']
-            memory_limit = stats['memory_stats']['limit']
-            memory_percentage = (memory_usage / memory_limit) * 100
-            mem_perc = round(memory_percentage, 2)
-            # print the metrics
-            print(f"Metriche per il container "+ container_name +" (ID: {container_id}):")
-            print("cpu usage: " + str(percentage) + "%")
-            print("memory usage: " + str(mem_perc) + "%")
-            print("stato del container: " + container.status)
-            print("------------------------")
-        #wait 10 second before checking again the status of the container 
-        time.sleep(10)
-
-def cold_start(containers):
-    #remove the redis container from the list of containers
-    if redis_container in containers:
-        containers.remove(redis_container)
-    for container in containers:
-        if container.status == "exited" and redis_client.hget("cold_start", container.name) is None:
-            redis_client.hset("cold_start", container.name, time.time())
-        if container.status == "running" and redis_client.hget("cold_start", container.name) is not None:
-            redis_client.hdel("cold_start", container.name)
-        if container.status == "exited" and redis_client.hget("cold_start", container.name) is not None:
-            tempo = time.time() - float(redis_client.hget("cold_start", container.name))
-            if tempo > 20:
-                container.remove()
-                redis_client.hdel("cold_start", container.name)
-                print("container " + container.name + " removed")
-                print("tempo di inattività: " + str(tempo))
+                #compute memory usage
+                memory_usage = stats['memory_stats']['usage'] - stats['memory_stats']['stats']['cache']
+                memory_limit = stats['memory_stats']['limit']
+                memory_percentage = (memory_usage / memory_limit) * 100
+                mem_perc = round(memory_percentage, 2)
+                # print the metrics
+                print(f"Metriche per il container "+ container_name +" (ID: {container_id}):")
+                print("cpu usage: " + str(percentage) + "%")
+                print("memory usage: " + str(mem_perc) + "%")
+                print("stato del container: " + container.status)
                 print("------------------------")
-    time.sleep(10)
+            #wait 10 second before checking again the status of the container 
+        
+        for container in containersOffline:
+            if containersOffline is None:
+                continue
+            if container.status == "exited" and redis_client.hget("cold_start", container.name) is None:
+                redis_client.hset("cold_start", container.name, time.time())
+            if container.status == "running" and redis_client.hget("cold_start", container.name) is not None:
+                redis_client.hdel("cold_start", container.name)
+            if container.status == "exited" and redis_client.hget("cold_start", container.name) is not None:
+                tempo = time.time() - float(redis_client.hget("cold_start", container.name))
+                if tempo > 20:                           #if the container is inactive for more than 20 seconds remove the container
+                    container.remove()
+                    redis_client.hdel("cold_start", container.name)
+                    print("container " + container.name + " removed")
+                    print("tempo di inattività: " + str(tempo) + " secondi")
+                    print("------------------------")
+        time.sleep(2)     
+        #crea un if che se viene chiusa l'aplicazione termina il thread
+        if killThread == True:
+            break
 
-# thread to check the status of the container
-   
-thread1 = threading.Thread(target=container_resource_metrics, args=(client,))
-thread2 = threading.Thread(target=cold_start, args=(all_containers,))
-thread1.start()
-#thread2.start()        
+thread1 = threading.Thread(target=container_resource_metrics, args=())
+thread1.start()    
     
 
 #first function to start the container
@@ -185,11 +195,10 @@ for container in client.containers.list(all=True):
     if not container.image.tags:
         container.remove()
 
-
-
  
 app.mainloop()
 print('GUI closed')
+killThread = True
 #create a loop for for close the container when the GUI is closed
 for container in client.containers.list(all=True):
     container.stop()
