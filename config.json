@@ -1,0 +1,17 @@
+
+{
+    "path": {
+        "dockerfile_path_foo1" : "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\functions\\func1",
+        "dockerfile_path_foo2" : "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\functions\\func2",
+        "redis_path" : "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\redis",
+        "plot_metrics_path" : "app/metrics.csv"
+    },
+    
+    "redis": {
+        "host": "127.0.0.1",
+        "port": "6379",
+        "portNumber": 6379,
+        "command": "redis-server"
+        
+    }
+}

@@ -7,11 +7,17 @@ import os
 import threading
 import redis
 from datetime import datetime
+import json
+
+
 
 
 # Funzione per aggiornare il testo della finestra di output
 def update_output_text(text):
     output_text.set(text)
+
+with open("config.json", "r") as config_file:
+    config_data = json.load(config_file)
 
 
 # Creazione dell'applicazione GUI
@@ -29,6 +35,11 @@ client = docker.from_env()
 dockerfile_path_foo1 = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\functions\\func1"
 dockerfile_path_foo2 = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\functions\\func2"
 redis_path = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\redis"
+
+with open('metrics.csv', 'a') as f:
+            #header 
+            f.write("total_cpu_usage,total_memory_usage,number_of_containers,number_of_active_containers,number_of_inactive_containers,timestamp\n")
+f.close()
 
 #functions pool to create the containers 
 image1 = client.images.build(path=dockerfile_path_foo1, tag="func1")
@@ -77,7 +88,7 @@ def retrieve_containers_offline(containers):
     
 def container_resource_metrics():
     #remove the redis container from the list of containers
-    time.sleep(6)
+    time.sleep(5)
     while True:
         active_containers = client.containers.list(all=False)
         containers = client.containers.list(all=True)
@@ -87,17 +98,13 @@ def container_resource_metrics():
         if nameRedisContainer in active_containers:
             active_containers.remove(nameRedisContainer)
         for container in active_containers:
-            print("numero di container istanziati: " + str(len(containers)-1)) #remove the redis container from the list of containers
-            print("numero di container in esecuzione: " + str(len(active_containers)-1)) #remove the redis container from the list of containers
-            print("numero di container inattivi: " + str(len(containersOffline))) 
-            
-            container_id = container.id
-            container_name = container.name
-            print("nome del container: " + container_name)
-            print("stato del container: " + container.status)
+            if nameRedisContainer == container.name:
+                continue
                 
+            #print("numero di container istanziati: " + str(len(containers)-1)) #remove the redis container from the list of containers
+            #print("numero di container in esecuzione: " + str(len(active_containers)-1)) #remove the redis container from the list of containers
+            #print("numero di container inattivi: " + str(len(containersOffline)))    
             try:
-                print("stato del container: " + container.status)
                 stats = container.stats(stream = False) #If stream set to false, only the current stats will be returned instead of a stream. True by default.
                     
                 UsageDelta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
@@ -109,21 +116,17 @@ def container_resource_metrics():
                 percentage = (UsageDelta / SystemDelta) * len_cpu * 100
                 memory_percentage = (memory_usage / memory_limit) * 100
                 mem_perc = round(memory_percentage, 2)
-            except KeyError:
-                continue   
-                
-                
                 # print the metrics for each container
-                print(f"Metriche per il container "+ container_name +" (ID: {container_id}):")
-                print("cpu usage: " + str(percentage) + "%")
-                print("memory usage: " + str(mem_perc) + "%")
-                print("stato del container: " + container.status)
-                print("------------------------")
-
-            #compute the total cpu usage and the total memory usage
+                #print(f"Metriche per il container "+ container.name)
+                #print("cpu usage: " + str(percentage) + "%")
+                #print("memory usage: " + str(mem_perc) + "%")
+                #print("------------------------")
+                #compute the total cpu usage and the total memory usage
                 total_cpu_usage = total_cpu_usage + percentage
                 total_memory_usage = total_memory_usage + mem_perc
-            time.sleep(1)
+            except KeyError:
+                break  
+                
          # after the for loop print the total cpu usage and the total memory usage 
         print("total cpu usage: " + str(total_cpu_usage) + "%")
         print("total memory usage: " + str(total_memory_usage) + "%")
@@ -138,12 +141,10 @@ def container_resource_metrics():
         # Crea un oggetto datetime dal timestamp
         datetime_obj = datetime.fromtimestamp(time.time())
         # Formatta l'oggetto datetime in una stringa leggibile
-        human_readable_time = datetime_obj.strftime('%Y-%m-%d %H:%M:%S')     
+        human_readable_time = datetime_obj.strftime('%H:%M:%S')     
 
         # write the metrics in a file csv 
         with open('metrics.csv', 'a') as f:
-            #header 
-            f.write("total_cpu_usage,total_memory_usage,number_of_containers,number_of_active_containers,number_of_inactive_containers,timestamp\n")
             f.write(str(total_cpu_usage) + "," + str(total_memory_usage) + "," + str(len(containers)-1) + "," + str(len(active_containers)-1) + "," + str(len(containersOffline)) + "," + str(human_readable_time) + "\n")
         f.close()
 
@@ -158,7 +159,7 @@ def container_resource_metrics():
                 redis_client.hdel("cold_start", container.name)
             if container.status == "exited" and redis_client.hget("cold_start", container.name) is not None:
                 tempo = time.time() - float(redis_client.hget("cold_start", container.name))
-                if tempo > 20:                           #if the container is inactive for more than 20 seconds remove the container
+                if tempo > 20 and container.status != "running":                           #if the container is inactive for more than 20 seconds remove the container
                     container.remove()
                     redis_client.hdel("cold_start", container.name)
                     print("container " + container.name + " removed")
@@ -188,8 +189,10 @@ def on_button_click_function1():
         update_output_text("Container func1 avviato")
     else: #if the container is not running restart the container
         container = get_unused_container(matching_containers_foo1)
-        container.restart()
-        update_output_text("Container func1 avviato")
+        if redis_client.hget("cold_start", container.name) is not None:
+            container.restart()
+            redis_client.hdel("cold_start", container.name)
+            update_output_text("Container func1 avviato")
 
 #first function to start the container
 def on_button_click_function2():
@@ -205,8 +208,10 @@ def on_button_click_function2():
         update_output_text("Container func2 avviato")
     else:
         container = get_unused_container(matching_containers_foo2)
-        container.restart()
-        update_output_text("Container func2 avviato")
+        if redis_client.hget("cold_start", container.name) is not None:
+            container.restart()
+            redis_client.hdel("cold_start", container.name)
+            update_output_text("Container func2 avviato")
 
 label = tk.Label(app, text="Seleziona la funzione da avviare").grid(row=0, column=1)
 button = tk.Button(app, text="foo1", command= on_button_click_function1, padx=10, pady=5).grid(row=4, column=2)
@@ -240,7 +245,7 @@ for container in client.containers.list(all=True):
     print(container.name + "container removed")
 # Elimina il file
 try:
-    os.remove('metrics.csv')
+    #os.remove('metrics.csv')
     print(f"Il file metrics è stato eliminato con successo.")
 except OSError as e:
     print(f"Si è verificato un errore durante l'eliminazione del file: {e}")
