@@ -32,6 +32,17 @@ output_text.set("Output qui")
 # Crea un'istanza del client Docker
 client = docker.from_env()
 
+# Crea un'istanza della sessione AWS
+
+session = boto3.Session(
+    aws_access_key_id=config_data["aws"]["aws_access_key_id"],
+    aws_secret_access_key=config_data["aws"]["aws_secret_access_key"],
+    region_name=config_data["aws"]["region_name"]
+)
+
+# Crea un'istanza del client AWS Lambda
+lambda_client = boto3.client('lambda')
+
 #dockerfile_path_foo1 = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\functions\\func1"
 dockerfile_path_foo1 = config_data["path"]["func1_path"]
 dockerfile_path_foo2 = config_data["path"]["func2_path"]
@@ -156,7 +167,6 @@ def container_resource_metrics(lettera):
             f.close()
 
             
-        
         if (lettera == "b"):
             #check if the container is inactive for more than 20 seconds       
             
