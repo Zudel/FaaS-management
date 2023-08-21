@@ -1,0 +1,6 @@
+- politica di offloading: tempo di risposta non ok
+			  consumo di risorse ok
+
+
+- awsLambda	          fare eseguire funzioni
+			  considerare il delay
