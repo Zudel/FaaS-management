@@ -2,36 +2,130 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
+	"os"
 	"time"
+
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 )
 
-func waitTenSeconds() {
-	fmt.Println("Inizio attesa di 10 secondi...")
-	time.Sleep(15 * time.Second)
-	fmt.Println("Attesa completata!")
+func bubbleSort(arr []int) {
+	n := len(arr)
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			if arr[j] > arr[j+1] {
+				arr[j], arr[j+1] = arr[j+1], arr[j]
+			}
+		}
+	}
 }
 
-func countOccurrences(input string) []int {
-	occurrences := make([]int, 26) // Creazione di un array di interi per le 26 lettere dell'alfabeto inglese
+func selectionSort(arr []int) {
+	n := len(arr)
+	for i := 0; i < n-1; i++ {
+		minIndex := i
+		for j := i + 1; j < n; j++ {
+			if arr[j] < arr[minIndex] {
+				minIndex = j
+			}
+		}
+		arr[i], arr[minIndex] = arr[minIndex], arr[i]
+	}
+}
 
-	for _, char := range input {
-		if char >= 'a' && char <= 'z' {
-			occurrences[char-'a']++ // Incremento l'occorrenza corrispondente all'indice della lettera nell'array
-		} else if char >= 'A' && char <= 'Z' {
-			occurrences[char-'A']++ // Incremento l'occorrenza corrispondente all'indice della lettera nell'array
+func mergeSort(arr []int) []int {
+	n := len(arr)
+	if n <= 1 {
+		return arr
+	}
+
+	mid := n / 2
+	left := mergeSort(arr[:mid])
+	right := mergeSort(arr[mid:])
+
+	return merge(left, right)
+}
+
+func merge(left, right []int) []int {
+	result := []int{}
+	i, j := 0, 0
+
+	for i < len(left) && j < len(right) {
+		if left[i] < right[j] {
+			result = append(result, left[i])
+			i++
+		} else {
+			result = append(result, right[j])
+			j++
 		}
 	}
 
-	return occurrences
+	result = append(result, left[i:]...)
+	result = append(result, right[j:]...)
+
+	return result
+}
+
+func findFastestSortingAlgorithm(arr []int) (string, time.Duration) {
+
+	bubbleSorted := make([]int, len(arr))
+	selectionSorted := make([]int, len(arr))
+	mergeSorted := make([]int, len(arr))
+
+	copy(bubbleSorted, arr)
+	copy(selectionSorted, arr)
+	copy(mergeSorted, arr)
+
+	bubbleStartTime := time.Now()
+	bubbleSort(bubbleSorted)
+	bubbleTime := time.Since(bubbleStartTime)
+
+	selectionStartTime := time.Now()
+	selectionSort(selectionSorted)
+	selectionTime := time.Since(selectionStartTime)
+
+	mergeStartTime := time.Now()
+	mergeSort(mergeSorted)
+	mergeTime := time.Since(mergeStartTime)
+
+	if bubbleTime <= selectionTime && bubbleTime <= mergeTime {
+		return "Bubble Sort", bubbleTime
+	} else if selectionTime <= bubbleTime && selectionTime <= mergeTime {
+		return "Selection Sort", selectionTime
+	} else {
+		return "Merge Sort", mergeTime
+	}
 }
 
 func main() {
-	var input string
-	//the input was inserted by the user in the terminal
-	fmt.Println("Insert a string:")
-	fmt.Scanln(&input)
-	input = "Hello, World!"
-	fmt.Println(countOccurrences(input))
-	waitTenSeconds()
 
+	// Controlla se il codice sta eseguendo su AWS Lambda o in locale
+	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
+		lambda.Start(handler)
+	} else {
+		fmt.Println("Running locally")
+	}
+
+	rand.Seed(time.Now().UnixNano())
+	arr := make([]int, 100000)
+	for i := range arr {
+		arr[i] = rand.Intn(100000)
+	}
+
+	fastestAlgorithm, duration := findFastestSortingAlgorithm(arr)
+	fmt.Printf("The fastest sorting algorithm is %s with time: %v\n", fastestAlgorithm, duration)
+}
+
+func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	rand.Seed(time.Now().UnixNano())
+	arr := make([]int, 100000)
+	for i := range arr {
+		arr[i] = rand.Intn(100000)
+	}
+
+	fastestAlgorithm, duration := findFastestSortingAlgorithm(arr)
+	responseBody := fmt.Sprintf("The fastest sorting algorithm is %s with time: %v\n", fastestAlgorithm, duration)
+
+	return events.APIGatewayProxyResponse{Body: responseBody, StatusCode: 200}, nil
 }

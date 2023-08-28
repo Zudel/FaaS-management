@@ -32,16 +32,13 @@ output_text.set("Output qui")
 # Crea un'istanza del client Docker
 client = docker.from_env()
 
-# Crea un'istanza della sessione AWS
-
-session = boto3.Session(
-    aws_access_key_id=config_data["aws"]["aws_access_key_id"],
-    aws_secret_access_key=config_data["aws"]["aws_secret_access_key"],
-    region_name=config_data["aws"]["region_name"]
-)
-
-# Crea un'istanza del client AWS Lambda
 lambda_client = boto3.client('lambda')
+lambda_client.get_account_settings()
+
+#arn:aws:sts::274482341370:assumed-role/voclabs/user2193460=Roberto_Fardella
+
+exit(0)
+
 
 #dockerfile_path_foo1 = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\functions\\func1"
 dockerfile_path_foo1 = config_data["path"]["func1_path"]
