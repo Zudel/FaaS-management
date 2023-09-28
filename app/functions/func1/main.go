@@ -119,9 +119,9 @@ func main() {
 
 func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	rand.Seed(time.Now().UnixNano())
-	arr := make([]int, 100000)
+	arr := make([]int, 1000)
 	for i := range arr {
-		arr[i] = rand.Intn(100000)
+		arr[i] = rand.Intn(1000)
 	}
 
 	fastestAlgorithm, duration := findFastestSortingAlgorithm(arr)

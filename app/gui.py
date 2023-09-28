@@ -10,8 +10,7 @@ import redis
 from datetime import datetime
 import json
 
-offloading = False
-
+offloading = False #if the offloading is true the function will be executed on aws lambda
 # Funzione per aggiornare il testo della finestra di output
 def update_output_text(text):
     output_text.set(text)
@@ -19,8 +18,6 @@ def update_output_text(text):
 with open("config.json", "r") as config_file:
     config_data = json.load(config_file)
 
-
-# Creazione dell'applicazione GUI
 app = tk.Tk()
 app.title("FaaS Management GUI")
 app.geometry("720x480")
@@ -28,23 +25,13 @@ label = tk.Label(app, text="welcome to my Faas management application!")
 output_text = StringVar()
 output_text.set("Output qui")
 
-
-# Crea un'istanza del client Docker
 client = docker.from_env()
-
 lambda_client = boto3.client('lambda')
-lambda_client.get_account_settings()
-
-#arn:aws:sts::274482341370:assumed-role/voclabs/user2193460=Roberto_Fardella
-
-exit(0)
-
-
-#dockerfile_path_foo1 = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\functions\\func1"
+sqs_client = boto3.client('sqs', region_name='us-east-1')
+queue_url = config_data["url"]["queue_url"]
 dockerfile_path_foo1 = config_data["path"]["func1_path"]
 dockerfile_path_foo2 = config_data["path"]["func2_path"]
-#dockerfile_path_foo2 = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\functions\\func2"
-#redis_path = "C:\\Users\\Roberto\\Documents\\GitHub\\Faas management\\app\\redis"
+dockerfile_path_foo3 = config_data["path"]["func3_path"]
 redis_path = config_data["path"]["redis_path"]
 
 with open('metrics.csv', 'a') as f:
@@ -55,13 +42,15 @@ f.close()
 #functions pool to create the containers 
 image1 = client.images.build(path=dockerfile_path_foo1, tag="func1")
 image2 = client.images.build(path=dockerfile_path_foo2 , tag="func2")
+image3 = client.images.build(path=dockerfile_path_foo3 , tag="func3")
+
 redis_image = client.images.build(path=redis_path, tag="redis:latest")
-all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
+all_containers = client.containers.list(all=True)  
 
 #run a redis container
 options = {
-        "command": config_data["redis"]["command"] ,  # Comando da eseguire all'interno del container
-        "detach": True,  # Esegui il container in background
+        "command": config_data["redis"]["command"] ,  
+        "detach": True,  
         "ports": {config_data["redis"]["port"] : (config_data["redis"]["host"] , config_data["redis"]["portNumber"] )}  # Mappa la porta 6379 del container a 127.0.0.1:6379
     }
 redis_container = client.containers.run("redis", **options)
@@ -95,9 +84,9 @@ def retrieve_containers_offline(containers):
         if container.status == "exited":
             offline_containers.append(container)
     return offline_containers
-
    
 def container_resource_metrics(lettera):
+    global offloading
     #remove the redis container from the list of containers
     time.sleep(5)
     while True:
@@ -124,7 +113,6 @@ def container_resource_metrics(lettera):
                     UsageDelta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
                     SystemDelta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
                     len_cpu  = len( stats['cpu_stats']['cpu_usage']['percpu_usage'])
-                    #compute memory usage
                     memory_usage = stats['memory_stats']['usage'] - stats['memory_stats']['stats']['cache']
                     memory_limit = stats['memory_stats']['limit']
                     percentage = (UsageDelta / SystemDelta) * len_cpu * 100
@@ -142,10 +130,10 @@ def container_resource_metrics(lettera):
                     break  
                     
             # after the for loop print the total cpu usage and the total memory usage 
-            print("total cpu usage: " + str(total_cpu_usage) + "%")
-            print("total memory usage: " + str(total_memory_usage) + "%")
-            print("------------------------")
-            
+            if(len(active_containers) > 1):
+                print("total cpu usage: " + str(total_cpu_usage) + "%")
+                print("total memory usage: " + str(total_memory_usage) + "%")
+                print("------------------------")
             #insert the metrics in redis 
             redis_client.hset("metrics", "total_cpu_usage", total_cpu_usage)
             redis_client.hset("metrics", "total_memory_usage", total_memory_usage)
@@ -153,12 +141,8 @@ def container_resource_metrics(lettera):
             redis_client.hset("metrics", "number_of_active_containers", len(active_containers)-1)
             redis_client.hset("metrics", "number_of_inactive_containers", len(containersOffline))
             redis_client.hset("metrics", "timestamp", time.time())
-            # Crea un oggetto datetime dal timestamp
             datetime_obj = datetime.fromtimestamp(time.time())
-            # Formatta l'oggetto datetime in una stringa leggibile
             human_readable_time = datetime_obj.strftime('%H:%M:%S')     
-
-            # write the metrics in a file csv 
             with open('metrics.csv', 'a') as f:
                 f.write(str(total_cpu_usage) + "," + str(total_memory_usage) + "," + str(len(containers)-1) + "," + str(len(active_containers)-1) + "," + str(len(containersOffline)) + "," + str(human_readable_time) + "\n")
             f.close()
@@ -182,28 +166,29 @@ def container_resource_metrics(lettera):
                         print("------------------------")    
         if (lettera == "c"):
            
-            #check the metrics in redis and to do offloading if the metrics are greater than the threshold take by json file config
-            # get the metrics from redis
             try:
                 total_cpu_usage2 = float(redis_client.hget("metrics", "total_cpu_usage"))
                 total_memory_usage2 = float(redis_client.hget("metrics", "total_memory_usage"))
                 number_of_active_containers = int(redis_client.hget("metrics", "number_of_active_containers"))
                 timestamp = float(redis_client.hget("metrics", "timestamp"))
-            except Exception as e:
-                continue
             
-            #get the threshold from json file
-            threshold_cpu = float(config_data["threshold"]["cpu"])
-            threshold_memory = float(config_data["threshold"]["memory"])
-            threshold_number_of_active_containers = int(config_data["threshold"]["number_of_active_containers"])
+            
+                #get the threshold from json file
+                threshold_cpu = float(config_data["threshold"]["cpu"])
+                threshold_memory = float(config_data["threshold"]["memory"])
+                threshold_number_of_active_containers = int(config_data["threshold"]["number_of_active_containers"])
 
-            #check if the metrics are greater than the threshold
-            if total_cpu_usage2 > threshold_cpu or total_memory_usage2 > threshold_memory or number_of_active_containers > threshold_number_of_active_containers:
-                #do offloading
-                print("do offloading")
-                offloading = True 
-        
-        #crea un if che se viene chiusa l'aplicazione termina il thread
+                #check if the metrics are greater than the threshold
+                if total_cpu_usage2 > threshold_cpu or total_memory_usage2 > threshold_memory or number_of_active_containers > threshold_number_of_active_containers:
+                    #do offloading
+                        offloading = True
+                else:
+                        offloading = False # se almeno una delle condizioni non è soddisfatta, torno in locale
+            
+            except Exception as e:
+                print(e)
+                continue
+
         if killThread == True:
             break
 
@@ -217,14 +202,17 @@ thread2.start()
 thread3 = threading.Thread(target=container_resource_metrics, args=("c"))
 thread3.start()
 
-#first function to start the container
+#first function 
 def on_button_click_function1():
+    global offloading
     opzioni_creazione = {
         "command": "./main",  # Comando da eseguire all'interno del container
         "detach": True,  # Esegui il container in background
     }
+    
     all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
     matching_containers_foo1 = [container for container in all_containers if "func1:latest" in container.image.tags]
+    print("off" + str(offloading))
     if offloading == False:
         if get_unused_container(matching_containers_foo1) is None :
             container = client.containers.run("func1", **opzioni_creazione)
@@ -237,12 +225,29 @@ def on_button_click_function1():
                 redis_client.hdel("cold_start", container.name)
                 update_output_text("Container func1 avviato")
     else: #if the offloading is true create a new container on aws lambda 
-        print("do offloading")
+        print("offloading of function 1")
+        try:
+            response = lambda_client.invoke(            # Chiama la funzione Lambda in modo asincrono senza dati di input
 
-#first function to start the container
+                FunctionName="foo1",
+                InvocationType='Event'  # Imposta 'Event' per una chiamata asincrona senza dati di input
+            )
+            
+            # Estrai la risposta quando risulta disponibile
+            
+            
+            response_payload = response['Payload'].read()
+            print(f"Risposta dalla funzione Lambda: {response_payload.decode('utf-8')}")
+        
+        except Exception as e:
+            print(f"Errore durante la chiamata della funzione Lambda: {str(e)}")
+        
+
+#second function 
 def on_button_click_function2():
+    global offloading
     opzioni_creazione = {
-        "command": "./foo2",  # Comando da eseguire all'interno del container
+        "command": "./main",  # Comando da eseguire all'interno del container
         "detach": True,  # Esegui il container in background
     }
     all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
@@ -250,6 +255,7 @@ def on_button_click_function2():
     if offloading == False:
         if get_unused_container(matching_containers_foo2) is None:
             container = client.containers.run("func2", **opzioni_creazione)
+            print(container.logs())
             
             update_output_text("Container func2 avviato")
         else:
@@ -259,7 +265,31 @@ def on_button_click_function2():
                 redis_client.hdel("cold_start", container.name)
                 update_output_text("Container func2 avviato")
     else: #if the offloading is true create a new container on aws lambda
-        print("do offloading")
+        print(offloading)
+
+#third function 
+def on_button_click_function3():
+    global offloading
+    opzioni_creazione = {
+        "command": "./main",  # Comando da eseguire all'interno del container
+        "detach": True,  # Esegui il container in background
+    }
+    all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
+    matching_containers_foo3 = [container for container in all_containers if "func3:latest" in container.image.tags]
+    if offloading == False:
+        if get_unused_container(matching_containers_foo3) is None :
+            container = client.containers.run("func3", **opzioni_creazione)
+            matching_containers_foo3.append(container)
+            update_output_text("Container func1 avviato")
+        else: #if the container is not running restart the container
+            container = get_unused_container(matching_containers_foo3)
+            if redis_client.hget("cold_start", container.name) is not None:
+                container.restart()
+                redis_client.hdel("cold_start", container.name)
+                update_output_text("Container func3 avviato")
+    else: #if the offloading is true create a new container on aws lambda 
+            print(offloading)
+
 
 
 label = tk.Label(app, text="Seleziona la funzione da avviare").grid(row=0, column=1)
@@ -268,13 +298,16 @@ tk.Label(app, text="").grid(row=5, column=2)
 tk.Label(app, text="").grid(row=6, column=2)
 tk.Label(app, text="").grid(row=7, column=2)
 button2 = tk.Button(app, text="foo2", command= on_button_click_function2, padx=10, pady=5).grid(row=8, column=2)
-# Etichetta per la finestra di output
-output_label = tk.Label(app, textvariable=output_text)
+tk.Label(app, text="").grid(row=8, column=2)
+tk.Label(app, text="").grid(row=9, column=2)
+tk.Label(app, text="").grid(row=10, column=2)
+button3 = tk.Button(app, text="foo3", command= on_button_click_function3, padx=10, pady=5).grid(row=12, column=2)
+
+output_label = tk.Label(app, textvariable=output_text) # Etichetta per la finestra di output
 tk.Label(app, text="",padx=100, pady=5).grid(row=4, column=4)
 output_label.grid(row=4, column=7)
-images = client.images.list()
 
-#remove all the dangling images 
+images = client.images.list() #remove all the dangling images 
 for image in images:
     if not image.tags:
         client.images.remove(image.id, force=True)
@@ -285,15 +318,14 @@ for container in client.containers.list(all=True):
 app.mainloop()
 print('GUI closed')
 killThread = True
-#create a loop for for close the container when the GUI is closed
-for container in client.containers.list(all=True):
+for container in client.containers.list(all=True): #create a loop for for close the container when the GUI is closed
+
     container.stop()
     print(container.name +" container stopped")
     container.remove()
     print(container.name + "container removed")
-# Elimina il file
 try:
-    #os.remove('metrics.csv')
+    os.remove('metrics.csv')
     print(f"Il file metrics è stato eliminato con successo.")
 except OSError as e:
     print(f"Si è verificato un errore durante l'eliminazione del file: {e}")
