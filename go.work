@@ -1,6 +1,7 @@
 go 1.20
 
 use (
+	./app/functions/func1
 	./app/functions/func2
 	./app/functions/func3
 )

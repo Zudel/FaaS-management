@@ -9,11 +9,17 @@ import threading
 import redis
 from datetime import datetime
 import json
+import sys
+
 
 offloading = False #if the offloading is true the function will be executed on aws lambda
 # Funzione per aggiornare il testo della finestra di output
 def update_output_text(text):
     output_text.set(text)
+opzioni_creazione = {
+        "command": "./main",  # Comando da eseguire all'interno del container
+        "detach": True,  # Esegui il container in background
+    }
 
 with open("config.json", "r") as config_file:
     config_data = json.load(config_file)
@@ -59,31 +65,15 @@ nameRedisContainer = redis_container.name
 # connect to redis
 try:
     redis_client = redis.Redis(host=config_data["redis"]["host"] , port=config_data["redis"]["portNumber"] , db=0) 
+    
 except Exception as e:
     print(e)
     redis_container.stop()
     redis_container.remove()
 
-def verify_container_status(containers):
-    f = False
-    for container in containers:
-        if container.status != "running":
-            f = True
-    return f
 
-def get_unused_container(all_containers):
-    for container in all_containers:
-        # Verifica se il container non sta eseguendo
-        if container.status != 'running':
-            return container
-    return None
 
-def retrieve_containers_offline(containers):
-    offline_containers = []
-    for container in containers:
-        if container.status == "exited":
-            offline_containers.append(container)
-    return offline_containers
+
    
 def container_resource_metrics(lettera):
     global offloading
@@ -93,7 +83,7 @@ def container_resource_metrics(lettera):
         
         active_containers = client.containers.list(all=False)
         containers = client.containers.list(all=True)
-        containersOffline = retrieve_containers_offline(containers)
+        containersOffline = utilityFunc.retrieve_containers_offline(containers)
         
         if (lettera == "a"):
             total_cpu_usage = 0
@@ -118,11 +108,6 @@ def container_resource_metrics(lettera):
                     percentage = (UsageDelta / SystemDelta) * len_cpu * 100
                     memory_percentage = (memory_usage / memory_limit) * 100
                     mem_perc = round(memory_percentage, 2)
-                    # print the metrics for each container
-                    #print(f"Metriche per il container "+ container.name)
-                    #print("cpu usage: " + str(percentage) + "%")
-                    #print("memory usage: " + str(mem_perc) + "%")
-                    #print("------------------------")
                     #compute the total cpu usage and the total memory usage
                     total_cpu_usage = total_cpu_usage + percentage
                     total_memory_usage = total_memory_usage + mem_perc
@@ -192,34 +177,17 @@ def container_resource_metrics(lettera):
         if killThread == True:
             break
 
-
-killThread = False
-lock = threading.Lock()
-thread1 = threading.Thread(target=container_resource_metrics, args=("a"))
-thread1.start()    
-thread2 = threading.Thread(target=container_resource_metrics, args=("b"))
-thread2.start()  
-thread3 = threading.Thread(target=container_resource_metrics, args=("c"))
-thread3.start()
-
-#first function 
-def on_button_click_function1():
-    global offloading
-    opzioni_creazione = {
-        "command": "./main",  # Comando da eseguire all'interno del container
-        "detach": True,  # Esegui il container in background
-    }
-    
+def serveRequest(opzioni_creazione):
     all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
     matching_containers_foo1 = [container for container in all_containers if "func1:latest" in container.image.tags]
-    print("off" + str(offloading))
+   
     if offloading == False:
-        if get_unused_container(matching_containers_foo1) is None :
+        if utilityFunc.get_unused_container(matching_containers_foo1) is None :
             container = client.containers.run("func1", **opzioni_creazione)
             matching_containers_foo1.append(container)
             update_output_text("Container func1 avviato")
         else: #if the container is not running restart the container
-            container = get_unused_container(matching_containers_foo1)
+            container = utilityFunc.get_unused_container(matching_containers_foo1)
             if redis_client.hget("cold_start", container.name) is not None:
                 container.restart()
                 redis_client.hdel("cold_start", container.name)
@@ -241,55 +209,31 @@ def on_button_click_function1():
         
         except Exception as e:
             print(f"Errore durante la chiamata della funzione Lambda: {str(e)}")
+
+killThread = False
+lock = threading.Lock()
+thread1 = threading.Thread(target=container_resource_metrics, args=("a"))
+thread1.start()    
+thread2 = threading.Thread(target=container_resource_metrics, args=("b"))
+thread2.start()  
+thread3 = threading.Thread(target=container_resource_metrics, args=("c"))
+thread3.start()
+
+#first function 
+def on_button_click_function1():
+    global offloading
+    serveRequest(opzioni_creazione)
         
 
 #second function 
 def on_button_click_function2():
     global offloading
-    opzioni_creazione = {
-        "command": "./main",  # Comando da eseguire all'interno del container
-        "detach": True,  # Esegui il container in background
-    }
-    all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
-    matching_containers_foo2 = [container for container in all_containers if "func2:latest" in container.image.tags]
-    if offloading == False:
-        if get_unused_container(matching_containers_foo2) is None:
-            container = client.containers.run("func2", **opzioni_creazione)
-            print(container.logs())
-            
-            update_output_text("Container func2 avviato")
-        else:
-            container = get_unused_container(matching_containers_foo2)
-            if redis_client.hget("cold_start", container.name) is not None:
-                container.restart()
-                redis_client.hdel("cold_start", container.name)
-                update_output_text("Container func2 avviato")
-    else: #if the offloading is true create a new container on aws lambda
-        print(offloading)
+    serveRequest(opzioni_creazione)
 
 #third function 
 def on_button_click_function3():
     global offloading
-    opzioni_creazione = {
-        "command": "./main",  # Comando da eseguire all'interno del container
-        "detach": True,  # Esegui il container in background
-    }
-    all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
-    matching_containers_foo3 = [container for container in all_containers if "func3:latest" in container.image.tags]
-    if offloading == False:
-        if get_unused_container(matching_containers_foo3) is None :
-            container = client.containers.run("func3", **opzioni_creazione)
-            matching_containers_foo3.append(container)
-            update_output_text("Container func1 avviato")
-        else: #if the container is not running restart the container
-            container = get_unused_container(matching_containers_foo3)
-            if redis_client.hget("cold_start", container.name) is not None:
-                container.restart()
-                redis_client.hdel("cold_start", container.name)
-                update_output_text("Container func3 avviato")
-    else: #if the offloading is true create a new container on aws lambda 
-            print(offloading)
-
+    serveRequest(opzioni_creazione)
 
 
 label = tk.Label(app, text="Seleziona la funzione da avviare").grid(row=0, column=1)
@@ -302,30 +246,13 @@ tk.Label(app, text="").grid(row=8, column=2)
 tk.Label(app, text="").grid(row=9, column=2)
 tk.Label(app, text="").grid(row=10, column=2)
 button3 = tk.Button(app, text="foo3", command= on_button_click_function3, padx=10, pady=5).grid(row=12, column=2)
-
 output_label = tk.Label(app, textvariable=output_text) # Etichetta per la finestra di output
 tk.Label(app, text="",padx=100, pady=5).grid(row=4, column=4)
 output_label.grid(row=4, column=7)
 
-images = client.images.list() #remove all the dangling images 
-for image in images:
-    if not image.tags:
-        client.images.remove(image.id, force=True)
-for container in client.containers.list(all=True):
-    if not container.image.tags:
-        container.remove()
 
+utilityFunc.removeDanglingImages(client) #remove all the dangling images 
 app.mainloop()
-print('GUI closed')
 killThread = True
-for container in client.containers.list(all=True): #create a loop for for close the container when the GUI is closed
-
-    container.stop()
-    print(container.name +" container stopped")
-    container.remove()
-    print(container.name + "container removed")
-try:
-    os.remove('metrics.csv')
-    print(f"Il file metrics è stato eliminato con successo.")
-except OSError as e:
-    print(f"Si è verificato un errore durante l'eliminazione del file: {e}")
+print('GUI closed')
+utilityFunc.clerAllContainers(client) #create a loop for for close the container when the GUI is closed

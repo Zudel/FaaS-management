@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/go-redis/redis/v7"
 )
 
 func bubbleSort(arr []int) {
@@ -107,6 +109,9 @@ func main() {
 		fmt.Println("Running locally")
 	}
 
+	ExampleNewClient() // Esempio di utilizzo di redis come client
+	//withNet() // Esempio di utilizzo di redis con net
+
 	rand.Seed(time.Now().UnixNano())
 	arr := make([]int, 100000)
 	for i := range arr {
@@ -128,4 +133,53 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	responseBody := fmt.Sprintf("The fastest sorting algorithm is %s with time: %v\n", fastestAlgorithm, duration)
 
 	return events.APIGatewayProxyResponse{Body: responseBody, StatusCode: 200}, nil
+}
+
+func ExampleNewClient() {
+	client := redis.NewClient(&redis.Options{
+		Addr: "172.17.0.2:6379",
+		DB:   0, // use default DB
+	})
+
+	val, err := client.Get("foo").Result()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("foo", val)
+
+	//pong, err := client.Ping().Result()
+	//fmt.Println(pong, err)
+	// Output: PONG <nil>
+}
+
+func withNet() {
+	// Indirizzo IP e porta del server Redis all'interno del container
+	redisAddr := "172.17.0.2:6379" // Sostituisci con l'indirizzo IP del container Rediis)
+
+	// Connessione al server Redis
+	conn, err := net.Dial("tcp", redisAddr)
+	if err != nil {
+		fmt.Println(":6379", err)
+		return
+	}
+	defer conn.Close()
+
+	// Invia il comando PING a Redis
+	_, err = conn.Write([]byte("PING\r\n"))
+	if err != nil {
+		fmt.Println("Errore nell'invio del comando PING:", err)
+		return
+	}
+
+	// Leggi la risposta da Redis
+	buffer := make([]byte, 1024)
+	n, err := conn.Read(buffer)
+	if err != nil {
+		fmt.Println("Errore nella lettura della risposta:", err)
+		return
+	}
+
+	// Stampare la risposta da Redis
+	response := string(buffer[:n])
+	fmt.Println("Risposta da Redis:", response)
 }
