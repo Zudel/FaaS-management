@@ -3,14 +3,11 @@ from tkinter import StringVar
 import docker
 import boto3
 import time
-import yaml
-import os
 import threading
 import redis
 from datetime import datetime
 import json
-import sys
-
+from utility.utilityFunc import *
 
 offloading = False #if the offloading is true the function will be executed on aws lambda
 # Funzione per aggiornare il testo della finestra di output
@@ -40,8 +37,7 @@ dockerfile_path_foo2 = config_data["path"]["func2_path"]
 dockerfile_path_foo3 = config_data["path"]["func3_path"]
 redis_path = config_data["path"]["redis_path"]
 
-with open('metrics.csv', 'a') as f:
-            #header 
+with open('metrics.csv', 'a') as f: #header 
             f.write("total_cpu_usage,total_memory_usage,number_of_containers,number_of_active_containers,number_of_inactive_containers,timestamp\n")
 f.close()
 
@@ -49,9 +45,7 @@ f.close()
 image1 = client.images.build(path=dockerfile_path_foo1, tag="func1")
 image2 = client.images.build(path=dockerfile_path_foo2 , tag="func2")
 image3 = client.images.build(path=dockerfile_path_foo3 , tag="func3")
-
 redis_image = client.images.build(path=redis_path, tag="redis:latest")
-all_containers = client.containers.list(all=True)  
 
 #run a redis container
 options = {
@@ -65,25 +59,20 @@ nameRedisContainer = redis_container.name
 # connect to redis
 try:
     redis_client = redis.Redis(host=config_data["redis"]["host"] , port=config_data["redis"]["portNumber"] , db=0) 
-    
 except Exception as e:
     print(e)
     redis_container.stop()
     redis_container.remove()
 
-
-
-
    
 def container_resource_metrics(lettera):
     global offloading
     #remove the redis container from the list of containers
-    time.sleep(5)
+    time.sleep(4)
     while True:
-        
         active_containers = client.containers.list(all=False)
         containers = client.containers.list(all=True)
-        containersOffline = utilityFunc.retrieve_containers_offline(containers)
+        containersOffline = retrieve_containers_offline(containers)
         
         if (lettera == "a"):
             total_cpu_usage = 0
@@ -92,11 +81,7 @@ def container_resource_metrics(lettera):
                 active_containers.remove(nameRedisContainer)
             for container in active_containers:
                 if nameRedisContainer == container.name:
-                    continue
-                    
-                #print("numero di container istanziati: " + str(len(containers)-1)) #remove the redis container from the list of containers
-                #print("numero di container in esecuzione: " + str(len(active_containers)-1)) #remove the redis container from the list of containers
-                #print("numero di container inattivi: " + str(len(containersOffline)))    
+                    continue    
                 try:
                     stats = container.stats(stream = False) #If stream set to false, only the current stats will be returned instead of a stream. True by default.
                         
@@ -132,78 +117,52 @@ def container_resource_metrics(lettera):
                 f.write(str(total_cpu_usage) + "," + str(total_memory_usage) + "," + str(len(containers)-1) + "," + str(len(active_containers)-1) + "," + str(len(containersOffline)) + "," + str(human_readable_time) + "\n")
             f.close()
 
-            
         if (lettera == "b"):
-            #check if the container is inactive for more than 20 seconds       
-            
-            for container in containersOffline:
-                if container.status == "exited" and redis_client.hget("cold_start", container.name) is None:
-                    redis_client.hset("cold_start", container.name, time.time())
-                if container.status == "running" and redis_client.hget("cold_start", container.name) is not None:
-                    redis_client.hdel("cold_start", container.name)
-                if container.status == "exited" and redis_client.hget("cold_start", container.name) is not None:
-                    tempo = time.time() - float(redis_client.hget("cold_start", container.name))
-                    if tempo > 20 and container.status != "running":                           #if the container is inactive for more than 20 seconds remove the container
-                        container.remove()
-                        redis_client.hdel("cold_start", container.name)
-                        print("container " + container.name + " removed")
-                        print("tempo di inattività: " + str(tempo) + " secondi")
-                        print("------------------------")    
-        if (lettera == "c"):
-           
             try:
-                total_cpu_usage2 = float(redis_client.hget("metrics", "total_cpu_usage"))
-                total_memory_usage2 = float(redis_client.hget("metrics", "total_memory_usage"))
-                number_of_active_containers = int(redis_client.hget("metrics", "number_of_active_containers"))
-                timestamp = float(redis_client.hget("metrics", "timestamp"))
-            
-            
-                #get the threshold from json file
-                threshold_cpu = float(config_data["threshold"]["cpu"])
-                threshold_memory = float(config_data["threshold"]["memory"])
-                threshold_number_of_active_containers = int(config_data["threshold"]["number_of_active_containers"])
-
-                #check if the metrics are greater than the threshold
-                if total_cpu_usage2 > threshold_cpu or total_memory_usage2 > threshold_memory or number_of_active_containers > threshold_number_of_active_containers:
-                    #do offloading
-                        offloading = True
-                else:
-                        offloading = False # se almeno una delle condizioni non è soddisfatta, torno in locale
-            
+                coldStart(containersOffline, redis_client)#check if the container is inactive for more than 20 seconds 
             except Exception as e:
-                print(e)
+                print("errore in fase di cold start: "+str(e))
+                continue
+
+        if (lettera == "c"):
+            try:
+                computeThreshold(redis_client, config_data)
+            except Exception as e:
+                print("errore in fase di offloading: "+str(e))
                 continue
 
         if killThread == True:
             break
 
-def serveRequest(opzioni_creazione):
-    all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
-    matching_containers_foo1 = [container for container in all_containers if "func1:latest" in container.image.tags]
+def serveRequest(opzioni_creazione, fooName):
+    try:
+        all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
+    except Exception as e:
+        print(e)
+        return
+                
+    matching_containers_foo = [container for container in all_containers if str(fooName)+":latest" in container.image.tags]
    
     if offloading == False:
-        if utilityFunc.get_unused_container(matching_containers_foo1) is None :
-            container = client.containers.run("func1", **opzioni_creazione)
-            matching_containers_foo1.append(container)
-            update_output_text("Container func1 avviato")
+        if get_unused_container(matching_containers_foo) is None :
+            container = client.containers.run(fooName, **opzioni_creazione)
+            matching_containers_foo.append(container)
+            update_output_text("Container "+fooName+" avviato")
         else: #if the container is not running restart the container
-            container = utilityFunc.get_unused_container(matching_containers_foo1)
+            container = get_unused_container(matching_containers_foo)
             if redis_client.hget("cold_start", container.name) is not None:
                 container.restart()
                 redis_client.hdel("cold_start", container.name)
-                update_output_text("Container func1 avviato")
+                
     else: #if the offloading is true create a new container on aws lambda 
-        print("offloading of function 1")
+        print("offloading of function "  )
         try:
             response = lambda_client.invoke(            # Chiama la funzione Lambda in modo asincrono senza dati di input
 
-                FunctionName="foo1",
-                InvocationType='Event'  # Imposta 'Event' per una chiamata asincrona senza dati di input
+                FunctionName=fooName,
+                InvocationType='RequestResponse'  # Imposta 'Event' per una chiamata asincrona senza dati di input
             )
-            
             # Estrai la risposta quando risulta disponibile
-            
-            
             response_payload = response['Payload'].read()
             print(f"Risposta dalla funzione Lambda: {response_payload.decode('utf-8')}")
         
@@ -219,25 +178,30 @@ thread2.start()
 thread3 = threading.Thread(target=container_resource_metrics, args=("c"))
 thread3.start()
 
-#first function 
-def on_button_click_function1():
+def on_button_click_function1(): #first function 
     global offloading
-    serveRequest(opzioni_creazione)
-        
+    param1 = entryF1.get()
+    if param1 != "":
+        print("parametro inserito: "+param1)
+        redis_client.hset("fastestSortingAlgorithm", "param1", param1)
+    else:
+        print("parametro non inserito")
+        return
+    serveRequest(opzioni_creazione,"func1")
 
-#second function 
-def on_button_click_function2():
+def on_button_click_function2(): #second function 
     global offloading
-    serveRequest(opzioni_creazione)
+    serveRequest(opzioni_creazione, "func2")
 
-#third function 
-def on_button_click_function3():
+def on_button_click_function3(): #third function 
     global offloading
-    serveRequest(opzioni_creazione)
-
+    serveRequest(opzioni_creazione, "func3")
 
 label = tk.Label(app, text="Seleziona la funzione da avviare").grid(row=0, column=1)
-button = tk.Button(app, text="foo1", command= on_button_click_function1, padx=10, pady=5).grid(row=4, column=2)
+button = tk.Button(app, text="fastest sorting algorithm", command= on_button_click_function1, padx=10, pady=5).grid(row=4, column=2)
+entryF1 = tk.Entry()
+entryF1.grid(row=4, column=4)
+
 tk.Label(app, text="").grid(row=5, column=2)
 tk.Label(app, text="").grid(row=6, column=2)
 tk.Label(app, text="").grid(row=7, column=2)
@@ -250,9 +214,7 @@ output_label = tk.Label(app, textvariable=output_text) # Etichetta per la finest
 tk.Label(app, text="",padx=100, pady=5).grid(row=4, column=4)
 output_label.grid(row=4, column=7)
 
-
-utilityFunc.removeDanglingImages(client) #remove all the dangling images 
-app.mainloop()
+removeDanglingImages(client) #remove all the dangling images
+app.mainloop() 
 killThread = True
-print('GUI closed')
-utilityFunc.clerAllContainers(client) #create a loop for for close the container when the GUI is closed
+clerAllContainers(client) #close all the container when the GUI is closed

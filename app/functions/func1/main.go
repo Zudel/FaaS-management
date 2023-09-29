@@ -3,14 +3,16 @@ package main
 import (
 	"fmt"
 	"math/rand"
-	"net"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/go-redis/redis/v7"
 )
+
+var valInt int
 
 func bubbleSort(arr []int) {
 	n := len(arr)
@@ -100,8 +102,15 @@ func findFastestSortingAlgorithm(arr []int) (string, time.Duration) {
 	}
 }
 
-func main() {
+func main() { //l'unico parametro che viene passato è la dimensione dell'array
 
+	val, err := ExampleNewClient()
+	if err != nil {
+		fmt.Println("Errore nella connessione a Redis:", err)
+		return
+	}
+	//devo convertire val in un intero
+	valInt, _ := strconv.Atoi(val)
 	// Controlla se il codice sta eseguendo su AWS Lambda o in locale
 	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
 		lambda.Start(handler)
@@ -109,11 +118,8 @@ func main() {
 		fmt.Println("Running locally")
 	}
 
-	ExampleNewClient() // Esempio di utilizzo di redis come client
-	//withNet() // Esempio di utilizzo di redis con net
-
 	rand.Seed(time.Now().UnixNano())
-	arr := make([]int, 100000)
+	arr := make([]int, valInt)
 	for i := range arr {
 		arr[i] = rand.Intn(100000)
 	}
@@ -124,7 +130,7 @@ func main() {
 
 func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	rand.Seed(time.Now().UnixNano())
-	arr := make([]int, 1000)
+	arr := make([]int, valInt)
 	for i := range arr {
 		arr[i] = rand.Intn(1000)
 	}
@@ -135,51 +141,19 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	return events.APIGatewayProxyResponse{Body: responseBody, StatusCode: 200}, nil
 }
 
-func ExampleNewClient() {
+func ExampleNewClient() (string, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr: "172.17.0.2:6379",
 		DB:   0, // use default DB
 	})
 
-	val, err := client.Get("foo").Result()
+	val, err := client.HGet("fastestSortingAlgorithm", "param1").Result()
+	//remove once has been read
+	client.HDel("fastestSortingAlgorithm", "param1")
+	//stampa tutti i valori nel client con la chiave "fastestSortingAlgorithm"
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("foo", val)
-
-	//pong, err := client.Ping().Result()
-	//fmt.Println(pong, err)
-	// Output: PONG <nil>
-}
-
-func withNet() {
-	// Indirizzo IP e porta del server Redis all'interno del container
-	redisAddr := "172.17.0.2:6379" // Sostituisci con l'indirizzo IP del container Rediis)
-
-	// Connessione al server Redis
-	conn, err := net.Dial("tcp", redisAddr)
-	if err != nil {
-		fmt.Println(":6379", err)
-		return
-	}
-	defer conn.Close()
-
-	// Invia il comando PING a Redis
-	_, err = conn.Write([]byte("PING\r\n"))
-	if err != nil {
-		fmt.Println("Errore nell'invio del comando PING:", err)
-		return
-	}
-
-	// Leggi la risposta da Redis
-	buffer := make([]byte, 1024)
-	n, err := conn.Read(buffer)
-	if err != nil {
-		fmt.Println("Errore nella lettura della risposta:", err)
-		return
-	}
-
-	// Stampare la risposta da Redis
-	response := string(buffer[:n])
-	fmt.Println("Risposta da Redis:", response)
+	fmt.Println("valore passato: ", val)
+	return val, nil
 }
