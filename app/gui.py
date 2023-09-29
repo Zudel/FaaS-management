@@ -155,12 +155,27 @@ def serveRequest(opzioni_creazione, fooName):
                 redis_client.hdel("cold_start", container.name)
                 
     else: #if the offloading is true create a new container on aws lambda 
-        print("offloading of function "  )
+        print("offloading of function " + fooName + " on aws lambda"  )
+        
         try:
+            if fooName == "func1":
+                input_data = { #input data for the lambda function like a dictionary
+                    "param1": redis_client.hget("fastestSortingAlgorithm", "param1")
+            }
+            elif fooName == "func2":
+                input_data = { #input data for the lambda function like a dictionary
+                    "param1": redis_client.hget("fastestSortingAlgorithm", "param1")        #da sistemare
+            }
+            else:
+                input_data = { #input data for the lambda function like a dictionary
+                    "param1": redis_client.hget("fastestSortingAlgorithm", "param1")         #da sistemare
+            }
+
             response = lambda_client.invoke(            # Chiama la funzione Lambda in modo asincrono senza dati di input
 
                 FunctionName=fooName,
-                InvocationType='RequestResponse'  # Imposta 'Event' per una chiamata asincrona senza dati di input
+                InvocationType='RequestResponse',  # Imposta 'Event' per una chiamata asincrona senza dati di input
+                payload = json.dumps(input_data)
             )
             # Estrai la risposta quando risulta disponibile
             response_payload = response['Payload'].read()

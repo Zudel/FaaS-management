@@ -111,8 +111,8 @@ func main() { //l'unico parametro che viene passato è la dimensione dell'array
 	}
 	//devo convertire val in un intero
 	valInt, _ := strconv.Atoi(val)
-	// Controlla se il codice sta eseguendo su AWS Lambda o in locale
-	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
+
+	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" { // Check if running on lambda or locally
 		lambda.Start(handler)
 	} else {
 		fmt.Println("Running locally")
@@ -148,9 +148,8 @@ func ExampleNewClient() (string, error) {
 	})
 
 	val, err := client.HGet("fastestSortingAlgorithm", "param1").Result()
-	//remove once has been read
-	client.HDel("fastestSortingAlgorithm", "param1")
-	//stampa tutti i valori nel client con la chiave "fastestSortingAlgorithm"
+
+	client.HDel("fastestSortingAlgorithm", "param1") //remove once has been read
 	if err != nil {
 		panic(err)
 	}
