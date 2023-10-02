@@ -10,9 +10,6 @@ import json
 from utility.utilityFunc import *
 
 offloading = False #if the offloading is true the function will be executed on aws lambda
-# Funzione per aggiornare il testo della finestra di output
-def update_output_text(text):
-    output_text.set(text)
 opzioni_creazione = {
         "command": "./main",  # Comando da eseguire all'interno del container
         "detach": True,  # Esegui il container in background
@@ -25,9 +22,50 @@ app = tk.Tk()
 app.title("FaaS Management GUI")
 app.geometry("720x480")
 label = tk.Label(app, text="welcome to my Faas management application!")
-output_text = StringVar()
-output_text.set("Output qui")
 
+label = tk.Label(app, text="Seleziona la funzione da avviare").grid(row=0, column=1)
+
+entryF1 = tk.Entry()
+entryF1.grid(row=4, column=5)
+tk.Label(app, text="").grid(row=5, column=2)
+tk.Label(app, text="").grid(row=6, column=2)
+tk.Label(app, text="").grid(row=7, column=2)
+
+tk.Label(app, text="").grid(row=8, column=2)
+tk.Label(app, text="").grid(row=9, column=2)
+tk.Label(app, text="").grid(row=10, column=2)
+tk.Label(app, text="").grid(row=11, column=2)
+tk.Label(app, text="").grid(row=12, column=2)
+
+tk.Label(app, text="inserire la dimensione dell'array",padx=100, pady=5).grid(row=4, column=4)
+tk.Label(app, text="inserire la capacità  ").grid(row=9, column=4)
+tk.Label(app, text="inserire i pesi").grid(row=10, column=4)
+tk.Label(app, text="inserire i valori").grid(row=11, column=4)
+entryF2 = tk.Entry()
+entryF2.grid(row=9, column=5)
+entryF2Param2 = tk.Entry()
+entryF2Param2.grid(row=10, column=5)
+entryF2Param3 = tk.Entry()
+entryF2Param3.grid(row=11, column=5)
+
+# campi per la funzione 3
+tk.Label(app, text="").grid(row=15, column=4)
+tk.Label(app, text="").grid(row=16, column=4)
+tk.Label(app, text="Inserire gli elemevnti dell'insieme").grid(row=17, column=4)
+tk.Label(app, text="Inserire la soglia target").grid(row=18, column=4)
+entryF3Param2 = tk.Entry()
+entryF3Param2.grid(row=17, column=5)
+entryF3 = tk.Entry()
+entryF3.grid(row=18, column=5)
+
+# Creazione di una scrollbar
+scrollbar = tk.Scrollbar()
+scrollbar.grid(row=20, column=2, rowspan=20, sticky=tk.N + tk.S)
+
+# Creazione di un widget Text per visualizzare i risultati
+risultato_text = tk.Text(yscrollcommand=scrollbar.set)
+risultato_text.grid(row=20, column=2, rowspan=20, columnspan=2, sticky=tk.N + tk.S + tk.E + tk.W)
+scrollbar.config(command=risultato_text.yview)
 client = docker.from_env()
 lambda_client = boto3.client('lambda')
 sqs_client = boto3.client('sqs', region_name='us-east-1')
@@ -129,13 +167,14 @@ def container_resource_metrics(lettera):
                 computeThreshold(redis_client, config_data)
             except Exception as e:
                 print("errore in fase di offloading: "+str(e))
-                continue
+                exit(-2)
 
         if killThread == True:
             break
 
 def serveRequest(opzioni_creazione, fooName):
     try:
+        risultato_text.insert(tk.END, "Riga \n")
         all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
     except Exception as e:
         print(e)
@@ -147,7 +186,7 @@ def serveRequest(opzioni_creazione, fooName):
         if get_unused_container(matching_containers_foo) is None :
             container = client.containers.run(fooName, **opzioni_creazione)
             matching_containers_foo.append(container)
-            update_output_text("Container "+fooName+" avviato")
+
         else: #if the container is not running restart the container
             container = get_unused_container(matching_containers_foo)
             if redis_client.hget("cold_start", container.name) is not None:
@@ -198,36 +237,43 @@ def on_button_click_function1(): #first function
     param1 = entryF1.get()
     if param1 != "":
         print("parametro inserito: "+param1)
-        redis_client.hset("fastestSortingAlgorithm", "param1", param1)
+        redis_client.hmset("fastestSortingAlgorithm", {"param1": param1})
     else:
         print("parametro non inserito")
         return
-    serveRequest(opzioni_creazione,"func1")
+    serveRequest(opzioni_creazione,"func1") #fastest sorting algorithm
 
-def on_button_click_function2(): #second function 
+def on_button_click_function2():
     global offloading
-    serveRequest(opzioni_creazione, "func2")
+    param1 = entryF2.get()
+    param2 = entryF2Param2.get()
+    param3 = entryF2Param3.get()
+    if param1 != "" and param2 != "" and param3 != "":
+        redis_client.hmset("knapsack", {"param1": param1, "param2": param2, "param3": param3, "result": ""})
+    else:
+        print("manca un parametro")
+        return
+    serveRequest(opzioni_creazione, "func2") #knapsack NP problem
+    
 
-def on_button_click_function3(): #third function 
+def on_button_click_function3(): #subsetSum NP problem
     global offloading
+    param1 = entryF3Param2.get()
+    param2 = entryF3.get()
+    if param1 != "" and param2 != "":
+        redis_client.hmset("subsetSum", {"param1": param1, "param2": param2, "result": ""})
+    else:
+        print("manca un parametro")
+        return
     serveRequest(opzioni_creazione, "func3")
 
-label = tk.Label(app, text="Seleziona la funzione da avviare").grid(row=0, column=1)
-button = tk.Button(app, text="fastest sorting algorithm", command= on_button_click_function1, padx=10, pady=5).grid(row=4, column=2)
-entryF1 = tk.Entry()
-entryF1.grid(row=4, column=4)
 
-tk.Label(app, text="").grid(row=5, column=2)
-tk.Label(app, text="").grid(row=6, column=2)
-tk.Label(app, text="").grid(row=7, column=2)
-button2 = tk.Button(app, text="foo2", command= on_button_click_function2, padx=10, pady=5).grid(row=8, column=2)
-tk.Label(app, text="").grid(row=8, column=2)
-tk.Label(app, text="").grid(row=9, column=2)
-tk.Label(app, text="").grid(row=10, column=2)
-button3 = tk.Button(app, text="foo3", command= on_button_click_function3, padx=10, pady=5).grid(row=12, column=2)
-output_label = tk.Label(app, textvariable=output_text) # Etichetta per la finestra di output
-tk.Label(app, text="",padx=100, pady=5).grid(row=4, column=4)
-output_label.grid(row=4, column=7)
+
+tk.Button(app, text="fastest sorting algorithm", command= on_button_click_function1, padx=10, pady=5).grid(row=4, column=2)
+tk.Button(app, text="knapsack", command= on_button_click_function2, padx=10, pady=5).grid(row=10, column=2)
+tk.Button(app, text="Subset sum", command= on_button_click_function3, padx=10, pady=5).grid(row=17, column=2)
+    
+
 
 removeDanglingImages(client) #remove all the dangling images
 app.mainloop() 

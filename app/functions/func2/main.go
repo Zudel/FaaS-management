@@ -48,7 +48,6 @@ func main() {
 	} else {
 		fmt.Println("Running locally")
 
-		// Esegui il codice localmente con input personalizzati
 		set := []int{60, 100, 120}
 		weights := []int{10, 20, 30}
 		capacity := 50

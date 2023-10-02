@@ -13,6 +13,7 @@ import (
 )
 
 var valInt int
+var client redis.Client
 
 func bubbleSort(arr []int) {
 	n := len(arr)
@@ -103,7 +104,6 @@ func findFastestSortingAlgorithm(arr []int) (string, time.Duration) {
 }
 
 func main() { //l'unico parametro che viene passato è la dimensione dell'array
-
 	val, err := ExampleNewClient()
 	if err != nil {
 		fmt.Println("Errore nella connessione a Redis:", err)
@@ -126,6 +126,17 @@ func main() { //l'unico parametro che viene passato è la dimensione dell'array
 
 	fastestAlgorithm, duration := findFastestSortingAlgorithm(arr)
 	fmt.Printf("The fastest sorting algorithm is %s with time: %v\n", fastestAlgorithm, duration)
+
+	val2, err2 := client.HSet("fastestSortingAlgorithm", "result", fastestAlgorithm).Result()
+	//convert val2 int64 into string
+
+	if err2 == redis.Nil {
+		fmt.Println("Il campo specificato non esiste nel dizionario.")
+	} else if err != nil {
+		panic(err)
+	} else {
+		fmt.Printf("Valore estratto: %v\n", val2)
+	}
 }
 
 func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -149,7 +160,6 @@ func ExampleNewClient() (string, error) {
 
 	val, err := client.HGet("fastestSortingAlgorithm", "param1").Result()
 
-	client.HDel("fastestSortingAlgorithm", "param1") //remove once has been read
 	if err != nil {
 		panic(err)
 	}
