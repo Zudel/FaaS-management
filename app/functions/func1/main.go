@@ -12,8 +12,7 @@ import (
 	"github.com/go-redis/redis/v7"
 )
 
-var valInt int
-var client redis.Client
+var val int
 
 func bubbleSort(arr []int) {
 	n := len(arr)
@@ -104,65 +103,50 @@ func findFastestSortingAlgorithm(arr []int) (string, time.Duration) {
 }
 
 func main() { //l'unico parametro che viene passato è la dimensione dell'array
-	val, err := ExampleNewClient()
-	if err != nil {
-		fmt.Println("Errore nella connessione a Redis:", err)
-		return
-	}
-	//devo convertire val in un intero
-	valInt, _ := strconv.Atoi(val)
 
 	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" { // Check if running on lambda or locally
 		lambda.Start(handler)
 	} else {
 		fmt.Println("Running locally")
 	}
+	client := redis.NewClient(&redis.Options{
+		Addr: "172.17.0.2:6379",
+		DB:   0, // use default DB
+	})
+
+	defer client.Close()
+	val2, err := client.HGet("fastestSortingAlgorithm", "param1").Result()
+	fmt.Println("valore passato: ", val2)
+	val, _ = strconv.Atoi(val2)
+	if err != nil {
+		panic(err)
+	}
 
 	rand.Seed(time.Now().UnixNano())
-	arr := make([]int, valInt)
+	arr := make([]int, val)
 	for i := range arr {
 		arr[i] = rand.Intn(100000)
 	}
 
 	fastestAlgorithm, duration := findFastestSortingAlgorithm(arr)
 	fmt.Printf("The fastest sorting algorithm is %s with time: %v\n", fastestAlgorithm, duration)
+	messaggio := "The fastest sorting algorithm with vector size " + strconv.Itoa(val) + " is " + fastestAlgorithm + " with time: " + duration.String()
 
-	val2, err2 := client.HSet("fastestSortingAlgorithm", "result", fastestAlgorithm).Result()
-	//convert val2 int64 into string
-
-	if err2 == redis.Nil {
-		fmt.Println("Il campo specificato non esiste nel dizionario.")
-	} else if err != nil {
-		panic(err)
-	} else {
-		fmt.Printf("Valore estratto: %v\n", val2)
+	err2 := client.Publish("canale1", messaggio).Err()
+	if err2 != nil {
+		panic(err2)
 	}
 }
 
 func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	rand.Seed(time.Now().UnixNano())
-	arr := make([]int, valInt)
+	arr := make([]int, val)
 	for i := range arr {
-		arr[i] = rand.Intn(1000)
+		arr[i] = rand.Intn(val)
 	}
 
 	fastestAlgorithm, duration := findFastestSortingAlgorithm(arr)
 	responseBody := fmt.Sprintf("The fastest sorting algorithm is %s with time: %v\n", fastestAlgorithm, duration)
 
 	return events.APIGatewayProxyResponse{Body: responseBody, StatusCode: 200}, nil
-}
-
-func ExampleNewClient() (string, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr: "172.17.0.2:6379",
-		DB:   0, // use default DB
-	})
-
-	val, err := client.HGet("fastestSortingAlgorithm", "param1").Result()
-
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("valore passato: ", val)
-	return val, nil
 }

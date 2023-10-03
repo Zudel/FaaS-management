@@ -8,6 +8,7 @@ import redis
 from datetime import datetime
 import json
 from utility.utilityFunc import *
+from gui import guiCreate
 
 offloading = False #if the offloading is true the function will be executed on aws lambda
 opzioni_creazione = {
@@ -18,54 +19,6 @@ opzioni_creazione = {
 with open("config.json", "r") as config_file:
     config_data = json.load(config_file)
 
-app = tk.Tk()
-app.title("FaaS Management GUI")
-app.geometry("720x480")
-label = tk.Label(app, text="welcome to my Faas management application!")
-
-label = tk.Label(app, text="Seleziona la funzione da avviare").grid(row=0, column=1)
-
-entryF1 = tk.Entry()
-entryF1.grid(row=4, column=5)
-tk.Label(app, text="").grid(row=5, column=2)
-tk.Label(app, text="").grid(row=6, column=2)
-tk.Label(app, text="").grid(row=7, column=2)
-
-tk.Label(app, text="").grid(row=8, column=2)
-tk.Label(app, text="").grid(row=9, column=2)
-tk.Label(app, text="").grid(row=10, column=2)
-tk.Label(app, text="").grid(row=11, column=2)
-tk.Label(app, text="").grid(row=12, column=2)
-
-tk.Label(app, text="inserire la dimensione dell'array",padx=100, pady=5).grid(row=4, column=4)
-tk.Label(app, text="inserire la capacità  ").grid(row=9, column=4)
-tk.Label(app, text="inserire i pesi").grid(row=10, column=4)
-tk.Label(app, text="inserire i valori").grid(row=11, column=4)
-entryF2 = tk.Entry()
-entryF2.grid(row=9, column=5)
-entryF2Param2 = tk.Entry()
-entryF2Param2.grid(row=10, column=5)
-entryF2Param3 = tk.Entry()
-entryF2Param3.grid(row=11, column=5)
-
-# campi per la funzione 3
-tk.Label(app, text="").grid(row=15, column=4)
-tk.Label(app, text="").grid(row=16, column=4)
-tk.Label(app, text="Inserire gli elemevnti dell'insieme").grid(row=17, column=4)
-tk.Label(app, text="Inserire la soglia target").grid(row=18, column=4)
-entryF3Param2 = tk.Entry()
-entryF3Param2.grid(row=17, column=5)
-entryF3 = tk.Entry()
-entryF3.grid(row=18, column=5)
-
-# Creazione di una scrollbar
-scrollbar = tk.Scrollbar()
-scrollbar.grid(row=20, column=2, rowspan=20, sticky=tk.N + tk.S)
-
-# Creazione di un widget Text per visualizzare i risultati
-risultato_text = tk.Text(yscrollcommand=scrollbar.set)
-risultato_text.grid(row=20, column=2, rowspan=20, columnspan=2, sticky=tk.N + tk.S + tk.E + tk.W)
-scrollbar.config(command=risultato_text.yview)
 client = docker.from_env()
 lambda_client = boto3.client('lambda')
 sqs_client = boto3.client('sqs', region_name='us-east-1')
@@ -74,6 +27,12 @@ dockerfile_path_foo1 = config_data["path"]["func1_path"]
 dockerfile_path_foo2 = config_data["path"]["func2_path"]
 dockerfile_path_foo3 = config_data["path"]["func3_path"]
 redis_path = config_data["path"]["redis_path"]
+# Specifica il canale di comunicazione
+knapsack_channel = config_data["channel"]["knapsack_channel"] 
+subsetSum_channel = config_data["channel"]["subsetSum_channel"]
+sortAlg_Channel = config_data["channel"]["sortAlg_Channel"]
+
+
 
 with open('metrics.csv', 'a') as f: #header 
             f.write("total_cpu_usage,total_memory_usage,number_of_containers,number_of_active_containers,number_of_inactive_containers,timestamp\n")
@@ -94,6 +53,7 @@ options = {
 redis_container = client.containers.run("redis", **options)
 nameRedisContainer = redis_container.name
 
+
 # connect to redis
 try:
     redis_client = redis.Redis(host=config_data["redis"]["host"] , port=config_data["redis"]["portNumber"] , db=0) 
@@ -101,7 +61,12 @@ except Exception as e:
     print(e)
     redis_container.stop()
     redis_container.remove()
+    exit(-1)
 
+pubsub = redis_client.pubsub()
+pubsub.subscribe(knapsack_channel)
+pubsub.subscribe(subsetSum_channel)
+pubsub.subscribe(sortAlg_Channel)
    
 def container_resource_metrics(lettera):
     global offloading
@@ -168,13 +133,22 @@ def container_resource_metrics(lettera):
             except Exception as e:
                 print("errore in fase di offloading: "+str(e))
                 exit(-2)
+        if (lettera == "d"):
+            while True:
+                # Loop per ricevere e gestire i messaggi da tutti i canali
+                for messaggio in pubsub.listen():
+                        canale = messaggio['channel'].decode('utf-8')
+                        dati = messaggio['data']
+                        print(f"Ricevuto messaggio da {canale}: {dati}")
+                        guiCreate.risultato_text.insert(tk.END, str(dati) + "\n")
+
 
         if killThread == True:
             break
 
 def serveRequest(opzioni_creazione, fooName):
     try:
-        risultato_text.insert(tk.END, "Riga \n")
+        
         all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
     except Exception as e:
         print(e)
@@ -231,10 +205,12 @@ thread2 = threading.Thread(target=container_resource_metrics, args=("b"))
 thread2.start()  
 thread3 = threading.Thread(target=container_resource_metrics, args=("c"))
 thread3.start()
+thread4 = threading.Thread(target=container_resource_metrics, args=("d"))
+thread4.start()
 
-def on_button_click_function1(): #first function 
+def on_button_click_function1(): 
     global offloading
-    param1 = entryF1.get()
+    param1 = guiCreate.entryF1.get()
     if param1 != "":
         print("parametro inserito: "+param1)
         redis_client.hmset("fastestSortingAlgorithm", {"param1": param1})
@@ -245,11 +221,11 @@ def on_button_click_function1(): #first function
 
 def on_button_click_function2():
     global offloading
-    param1 = entryF2.get()
-    param2 = entryF2Param2.get()
-    param3 = entryF2Param3.get()
+    param1 = guiCreate.entryF2.get()
+    param2 = guiCreate.entryF2Param2.get()
+    param3 = guiCreate.entryF2Param3.get()
     if param1 != "" and param2 != "" and param3 != "":
-        redis_client.hmset("knapsack", {"param1": param1, "param2": param2, "param3": param3, "result": ""})
+        redis_client.hmset("knapsack", {"param1": param1, "param2": param2, "param3": param3})
     else:
         print("manca un parametro")
         return
@@ -258,24 +234,18 @@ def on_button_click_function2():
 
 def on_button_click_function3(): #subsetSum NP problem
     global offloading
-    param1 = entryF3Param2.get()
-    param2 = entryF3.get()
+    param1 = guiCreate.entryF3Param2.get()
+    param2 = guiCreate.entryF3.get()
     if param1 != "" and param2 != "":
-        redis_client.hmset("subsetSum", {"param1": param1, "param2": param2, "result": ""})
+        redis_client.hmset("subsetSum", {"param1": param1, "param2": param2})
     else:
         print("manca un parametro")
         return
     serveRequest(opzioni_creazione, "func3")
+guiCreate.gui_setup()   # setup the gui
 
-
-
-tk.Button(app, text="fastest sorting algorithm", command= on_button_click_function1, padx=10, pady=5).grid(row=4, column=2)
-tk.Button(app, text="knapsack", command= on_button_click_function2, padx=10, pady=5).grid(row=10, column=2)
-tk.Button(app, text="Subset sum", command= on_button_click_function3, padx=10, pady=5).grid(row=17, column=2)
-    
 
 
 removeDanglingImages(client) #remove all the dangling images
-app.mainloop() 
 killThread = True
 clerAllContainers(client) #close all the container when the GUI is closed
