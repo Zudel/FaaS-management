@@ -1,3 +1,4 @@
+import base64
 import tkinter as tk
 from tkinter import StringVar
 import docker
@@ -147,7 +148,6 @@ def controller(lettera):
                         print(f"Ricevuto messaggio da {canale}: {dati}")
                         risultato_text.insert(tk.END, str(dati) + "\n")
 
-
         if killThread == True:
             break
 
@@ -175,35 +175,39 @@ def serveRequest(opzioni_creazione, fooName):
     else: #if the offloading is true create a new container on aws lambda 
         print("offloading of function " + fooName + " on aws lambda"  )
         
+        
+        if fooName == "fastest_sorting_algorithm":
+            input_data = { #input data for the lambda function like a dictionary
+                "param1": redis_client.hget("fastest_sorting_algorithm", "param1").decode('utf-8')
+        }
+        elif fooName == "knapsack":
+            input_data = { #input data for the lambda function like a dictionary
+                "param1": redis_client.hget("knapsack", "param1").decode('utf-8') ,       
+                "param2": redis_client.hget("knapsack", "param2").decode('utf-8'),
+                "param3": redis_client.hget("knapsack", "param3").decode('utf-8')
+        }
+        else:
+            input_data = { #input data for the lambda function like a dictionary
+                "param1": redis_client.hget("subset_sum", "param1").decode('utf-8'),       
+                "param2": redis_client.hget("subset_sum", "param2").decode('utf-8')       
+        }
+        
         try:
-            if fooName == "fastest_sorting_algorithm":
-                input_data = { #input data for the lambda function like a dictionary
-                    "param1": redis_client.hget("fastest_sorting_algorithm", "param1")
-            }
-            elif fooName == "knapsack":
-                input_data = { #input data for the lambda function like a dictionary
-                    "param1": redis_client.hget("knapsack", "param1") ,       
-                    "param2": redis_client.hget("knapsack", "param2"),
-                    "param3": redis_client.hget("knapsack", "param3")
-            }
-            else:
-                input_data = { #input data for the lambda function like a dictionary
-                    "param1": redis_client.hget("subset_sum", "param1"),       
-                    "param2": redis_client.hget("subset_sum", "param2")       
-            }
-
             response = lambda_client.invoke(            # Chiama la funzione Lambda in modo asincrono senza dati di input
-
                 FunctionName=fooName,
                 InvocationType='RequestResponse',  # Imposta 'Event' per una chiamata asincrona senza dati di input
-                payload = json.dumps(input_data)
+                Payload = json.dumps(input_data)
             )
             # Estrai la risposta quando risulta disponibile
             response_payload = response['Payload'].read()
-            print(f"Risposta dalla funzione Lambda: {response_payload.decode('utf-8')}")
-        
+            print("Risposta dalla funzione Lambda"+ str(response_payload))
+            result = response_payload["body"] 
+            risultato_text.insert(tk.END, str(result) + " (by AWS) " + "\n")
+
         except Exception as e:
             print(f"Errore durante la chiamata della funzione Lambda: {str(e)}")
+            return
+        
 
 killThread = False
 lock = threading.Lock()
