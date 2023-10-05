@@ -115,7 +115,7 @@ func main() { //l'unico parametro che viene passato è la dimensione dell'array
 	})
 
 	defer client.Close()
-	val2, err := client.HGet("fastestSortingAlgorithm", "param1").Result()
+	val2, err := client.HGet("fastest_sorting_algorithm", "param1").Result()
 	fmt.Println("valore passato: ", val2)
 	val, _ = strconv.Atoi(val2)
 	if err != nil {
@@ -139,13 +139,16 @@ func main() { //l'unico parametro che viene passato è la dimensione dell'array
 }
 
 func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	param1 := request.QueryStringParameters["param1"]
+	val, _ = strconv.Atoi(param1)
 	rand.Seed(time.Now().UnixNano())
 	arr := make([]int, val)
 	for i := range arr {
-		arr[i] = rand.Intn(val)
+		arr[i] = rand.Intn(1000)
 	}
 
 	fastestAlgorithm, duration := findFastestSortingAlgorithm(arr)
+	fmt.Sprintf("Il valore di parametro1 è: %s\n", param1)
 	responseBody := fmt.Sprintf("The fastest sorting algorithm is %s with time: %v\n", fastestAlgorithm, duration)
 
 	return events.APIGatewayProxyResponse{Body: responseBody, StatusCode: 200}, nil

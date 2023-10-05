@@ -29,16 +29,21 @@ redis_path = config_data["path"]["redis_path"]
 knapsack_channel = config_data["channel"]["knapsack_channel"] 
 subsetSum_channel = config_data["channel"]["subsetSum_channel"]
 sortAlg_Channel = config_data["channel"]["sortAlg_Channel"]
+try:
+    with open('metrics.csv', 'a') as f: #header 
+                f.write("total_cpu_usage,total_memory_usage,number_of_containers,number_of_active_containers,number_of_inactive_containers,timestamp\n")
+    f.close()
+    print("metrics.csv created")
 
-with open('metrics.csv', 'a') as f: #header 
-            f.write("total_cpu_usage,total_memory_usage,number_of_containers,number_of_active_containers,number_of_inactive_containers,timestamp\n")
-f.close()
+    #functions pool to create the containers 
 
-#functions pool to create the containers 
-image1 = client.images.build(path=dockerfile_path_foo1, tag="func1")
-image2 = client.images.build(path=dockerfile_path_foo2 , tag="func2")
-image3 = client.images.build(path=dockerfile_path_foo3 , tag="func3")
-redis_image = client.images.build(path=redis_path, tag="redis:latest")
+    image1 = client.images.build(path=dockerfile_path_foo1, tag="fastest_sorting_algorithm")
+    image2 = client.images.build(path=dockerfile_path_foo2 , tag="knapsack")
+    image3 = client.images.build(path=dockerfile_path_foo3 , tag="subset_sum")
+    redis_image = client.images.build(path=redis_path, tag="redis:latest")
+except Exception as e:
+    print(e)
+    exit(-1)
 
 #run a redis container
 options = {
@@ -63,15 +68,18 @@ pubsub = redis_client.pubsub()
 pubsub.subscribe(knapsack_channel)
 pubsub.subscribe(subsetSum_channel)
 pubsub.subscribe(sortAlg_Channel)
-   
+print("redis container is running")
 def controller(lettera):
     global offloading
     #remove the redis container from the list of containers
-    time.sleep(4)
+    time.sleep(6)
     while True:
-        active_containers = client.containers.list(all=False)
-        containers = client.containers.list(all=True)
-        containersOffline = retrieve_containers_offline(containers)
+        try:
+            active_containers = client.containers.list(all=False)
+            containers = client.containers.list(all=True)
+            containersOffline = retrieve_containers_offline(containers)
+        except Exception as e:
+            continue
         
         if (lettera == "a"):
             total_cpu_usage = 0
@@ -124,11 +132,12 @@ def controller(lettera):
                 continue
 
         if (lettera == "c"):
-            try:
-                computeThreshold(redis_client, config_data)
-            except Exception as e:
-                print("errore in fase di offloading: "+str(e))
-                exit(-2)
+                try:
+                    res = computeThreshold(redis_client, config_data)
+                    offloading = res
+                except Exception as e:
+                    print("errore in fase di offloading: "+str(e))
+                    exit(-2)
         if (lettera == "d"):
             while True:
                 # Loop per ricevere e gestire i messaggi da tutti i canali
@@ -143,8 +152,8 @@ def controller(lettera):
             break
 
 def serveRequest(opzioni_creazione, fooName):
+    global offloading
     try:
-        
         all_containers = client.containers.list(all=True)  # Ottieni tutti i container in running
     except Exception as e:
         print(e)
@@ -167,17 +176,20 @@ def serveRequest(opzioni_creazione, fooName):
         print("offloading of function " + fooName + " on aws lambda"  )
         
         try:
-            if fooName == "func1":
+            if fooName == "fastest_sorting_algorithm":
                 input_data = { #input data for the lambda function like a dictionary
-                    "param1": redis_client.hget("fastestSortingAlgorithm", "param1")
+                    "param1": redis_client.hget("fastest_sorting_algorithm", "param1")
             }
-            elif fooName == "func2":
+            elif fooName == "knapsack":
                 input_data = { #input data for the lambda function like a dictionary
-                    "param1": redis_client.hget("fastestSortingAlgorithm", "param1")        #da sistemare
+                    "param1": redis_client.hget("knapsack", "param1") ,       
+                    "param2": redis_client.hget("knapsack", "param2"),
+                    "param3": redis_client.hget("knapsack", "param3")
             }
             else:
                 input_data = { #input data for the lambda function like a dictionary
-                    "param1": redis_client.hget("fastestSortingAlgorithm", "param1")         #da sistemare
+                    "param1": redis_client.hget("subset_sum", "param1"),       
+                    "param2": redis_client.hget("subset_sum", "param2")       
             }
 
             response = lambda_client.invoke(            # Chiama la funzione Lambda in modo asincrono senza dati di input
@@ -209,11 +221,11 @@ def on_button_click_function1():
     param1 = entryF1.get()
     if param1 != "":
         print("parametro inserito: "+param1)
-        redis_client.hmset("fastestSortingAlgorithm", {"param1": param1})
+        redis_client.hmset("fastest_sorting_algorithm", {"param1": param1})
     else:
         print("parametro non inserito")
         return
-    serveRequest(opzioni_creazione,"func1") #fastest sorting algorithm
+    serveRequest(opzioni_creazione,"fastest_sorting_algorithm") #fastest sorting algorithm
 
 def on_button_click_function2():
     global offloading
@@ -225,7 +237,7 @@ def on_button_click_function2():
     else:
         print("manca un parametro")
         return
-    serveRequest(opzioni_creazione, "func2") #knapsack NP problem
+    serveRequest(opzioni_creazione, "knapsack") #knapsack NP problem
     
 
 def on_button_click_function3(): #subsetSum NP problem
@@ -233,11 +245,14 @@ def on_button_click_function3(): #subsetSum NP problem
     param1 = entryF3Param2.get()
     param2 = entryF3.get()
     if param1 != "" and param2 != "":
-        redis_client.hmset("subsetSum", {"param1": param1, "param2": param2})
+        redis_client.hmset("subset_sum", {"param1": param1, "param2": param2})
     else:
         print("manca un parametro")
         return
-    serveRequest(opzioni_creazione, "func3")
+    serveRequest(opzioni_creazione, "subset_sum")
+
+# GUI setup
+
 app = tk.Tk()
 app.title("FaaS Management GUI")
 app.geometry("720x480")
@@ -250,13 +265,11 @@ entryF1.grid(row=4, column=5)
 tk.Label(app, text="").grid(row=5, column=2)
 tk.Label(app, text="").grid(row=6, column=2)
 tk.Label(app, text="").grid(row=7, column=2)
-
 tk.Label(app, text="").grid(row=8, column=2)
 tk.Label(app, text="").grid(row=9, column=2)
 tk.Label(app, text="").grid(row=10, column=2)
 tk.Label(app, text="").grid(row=11, column=2)
 tk.Label(app, text="").grid(row=12, column=2)
-
 tk.Label(app, text="inserire la dimensione dell'array",padx=100, pady=5).grid(row=4, column=4)
 tk.Label(app, text="inserire la capacità  ").grid(row=9, column=4)
 tk.Label(app, text="inserire i pesi").grid(row=10, column=4)
@@ -289,9 +302,8 @@ scrollbar.grid(row=20, column=2, rowspan=20, sticky=tk.N + tk.S)
 risultato_text = tk.Text(yscrollcommand=scrollbar.set)
 risultato_text.grid(row=20, column=2, rowspan=20, columnspan=2, sticky=tk.N + tk.S + tk.E + tk.W)
 scrollbar.config(command=risultato_text.yview)
+removeDanglingImages(client) #remove all the dangling images
 app.mainloop()
 
-
-removeDanglingImages(client) #remove all the dangling images
 killThread = True
 clerAllContainers(client) #close all the container when the GUI is closed

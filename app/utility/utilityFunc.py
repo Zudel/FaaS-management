@@ -69,10 +69,10 @@ def computeThreshold(redis_client, config_data):
                 threshold_cpu = float(config_data["threshold"]["cpu"])
                 threshold_memory = float(config_data["threshold"]["memory"])
                 threshold_number_of_active_containers = int(config_data["threshold"]["number_of_active_containers"])
-
                 #check if the metrics are greater than the threshold
                 if total_cpu_usage2 > threshold_cpu or total_memory_usage2 > threshold_memory or number_of_active_containers > threshold_number_of_active_containers:
                     #do offloading
-                        offloading = True
+                        res = True
                 else:
-                        offloading = False # se almeno una delle condizioni non è soddisfatta, torno in locale
+                        res = False # se almeno una delle condizioni non è soddisfatta, torno in locale
+                return res
