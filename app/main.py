@@ -39,8 +39,11 @@ try:
     #functions pool to create the containers 
 
     image1 = client.images.build(path=dockerfile_path_foo1, tag="fastest_sorting_algorithm")
+    print("image1 created")
     image2 = client.images.build(path=dockerfile_path_foo2 , tag="knapsack")
+    print("image2 created")
     image3 = client.images.build(path=dockerfile_path_foo3 , tag="subset_sum")
+    print("image3 created")
     redis_image = client.images.build(path=redis_path, tag="redis:latest")
 except Exception as e:
     print(e)
@@ -73,7 +76,7 @@ print("redis container is running")
 def controller(lettera):
     global offloading
     #remove the redis container from the list of containers
-    time.sleep(6)
+    time.sleep(5)
     while True:
         try:
             active_containers = client.containers.list(all=False)
@@ -178,35 +181,45 @@ def serveRequest(opzioni_creazione, fooName):
         
         if fooName == "fastest_sorting_algorithm":
             input_data = { #input data for the lambda function like a dictionary
-                "param1": redis_client.hget("fastest_sorting_algorithm", "param1").decode('utf-8')
+                'param1': redis_client.hget("fastest_sorting_algorithm", "param1").decode('utf-8')
         }
         elif fooName == "knapsack":
+
             input_data = { #input data for the lambda function like a dictionary
-                "param1": redis_client.hget("knapsack", "param1").decode('utf-8') ,       
-                "param2": redis_client.hget("knapsack", "param2").decode('utf-8'),
-                "param3": redis_client.hget("knapsack", "param3").decode('utf-8')
+                'param1': redis_client.hget("knapsack", "param1K").decode('utf-8') ,       
+                'param2': redis_client.hget("knapsack", "param2K").decode('utf-8')
+                
         }
         else:
-            input_data = { #input data for the lambda function like a dictionary
-                "param1": redis_client.hget("subset_sum", "param1").decode('utf-8'),       
-                "param2": redis_client.hget("subset_sum", "param2").decode('utf-8')       
-        }
+            # devo assegnar eil dizionario di redis a input data
+            input_data ={
+                'param1': redis_client.hget("subset_sum", "param1S").decode('utf-8') ,
+                'param2': redis_client.hget("subset_sum", "param2S").decode('utf-8')
+            }
         
         try:
+            print("invio della richiesta alla funzione lambda")
+            print("input data: " + str(input_data) + "destination function: " + fooName)
             response = lambda_client.invoke(            # Chiama la funzione Lambda in modo asincrono senza dati di input
                 FunctionName=fooName,
                 InvocationType='RequestResponse',  # Imposta 'Event' per una chiamata asincrona senza dati di input
                 Payload = json.dumps(input_data)
             )
-            # Estrai la risposta quando risulta disponibile
+        except Exception as e:
+            print(f"Errore durante la chiamata della funzione Lambda: {str(e)}")
+            return     
+        # Estrai la risposta quando risulta disponibile
+        try:
             response_payload = response['Payload'].read()
             print("Risposta dalla funzione Lambda"+ str(response_payload))
             result = response_payload["body"] 
+            print("risultato: " + str(result))
             risultato_text.insert(tk.END, str(result) + " (by AWS) " + "\n")
-
         except Exception as e:
-            print(f"Errore durante la chiamata della funzione Lambda: {str(e)}")
+            print(f"Errore durante l'estrazione della risposta: {str(e)}")
             return
+
+       
         
 
 killThread = False
@@ -225,7 +238,7 @@ def on_button_click_function1():
     param1 = entryF1.get()
     if param1 != "":
         print("parametro inserito: "+param1)
-        redis_client.hmset("fastest_sorting_algorithm", {"param1": param1})
+        redis_client.hmset("fastest_sorting_algorithm", {"param1": param1}) 
     else:
         print("parametro non inserito")
         return
@@ -233,11 +246,11 @@ def on_button_click_function1():
 
 def on_button_click_function2():
     global offloading
-    param1 = entryF2.get()
-    param2 = entryF2Param2.get()
-    param3 = entryF2Param3.get()
-    if param1 != "" and param2 != "" and param3 != "":
-        redis_client.hmset("knapsack", {"param1": param1, "param2": param2, "param3": param3})
+    param1K = entryF2.get() #capacity
+    param2K = entryF2Param2.get() #size of the array of objects
+    if param1K != "" and param2K != "" :
+        print("parametri inseriti: "+param1K+" "+param2K)
+        redis_client.hmset("knapsack", {"param1K": param1K, "param2K": param2K})
     else:
         print("manca un parametro")
         return
@@ -246,10 +259,11 @@ def on_button_click_function2():
 
 def on_button_click_function3(): #subsetSum NP problem
     global offloading
-    param1 = entryF3Param2.get()
-    param2 = entryF3.get()
-    if param1 != "" and param2 != "":
-        redis_client.hmset("subset_sum", {"param1": param1, "param2": param2})
+    param1S = entryF3Param2.get()
+    param2S = entryF3.get()
+    if param1S != "" and param2S != "":
+        print("parametri inseriti: "+param1S+" "+param2S)
+        redis_client.hmset("subset_sum", {"param1S": param1S, "param2S": param2S})
     else:
         print("manca un parametro")
         return
@@ -275,15 +289,16 @@ tk.Label(app, text="").grid(row=10, column=2)
 tk.Label(app, text="").grid(row=11, column=2)
 tk.Label(app, text="").grid(row=12, column=2)
 tk.Label(app, text="inserire la dimensione dell'array",padx=100, pady=5).grid(row=4, column=4)
+
+# campi per la funzione 2
 tk.Label(app, text="inserire la capacità  ").grid(row=9, column=4)
-tk.Label(app, text="inserire i pesi").grid(row=10, column=4)
-tk.Label(app, text="inserire i valori").grid(row=11, column=4)
+tk.Label(app, text="inserire la dimensione del vettore degli oggetti").grid(row=10, column=4)
 entryF2 = tk.Entry()
 entryF2.grid(row=9, column=5)
 entryF2Param2 = tk.Entry()
 entryF2Param2.grid(row=10, column=5)
-entryF2Param3 = tk.Entry()
-entryF2Param3.grid(row=11, column=5)
+
+# bottoni per le funzioni
 tk.Button(app, text="fastest sorting algorithm", command= on_button_click_function1, padx=10, pady=5).grid(row=4, column=2)
 tk.Button(app, text="knapsack", command= on_button_click_function2, padx=10, pady=5).grid(row=10, column=2)
 tk.Button(app, text="Subset sum", command= on_button_click_function3, padx=10, pady=5).grid(row=17, column=2)
@@ -291,7 +306,7 @@ tk.Button(app, text="Subset sum", command= on_button_click_function3, padx=10, p
 # campi per la funzione 3
 tk.Label(app, text="").grid(row=15, column=4)
 tk.Label(app, text="").grid(row=16, column=4)
-tk.Label(app, text="Inserire gli elementi dell'insieme").grid(row=17, column=4)
+tk.Label(app, text="Inserire la dimensione del vettore degli elementi del sottoinsieme").grid(row=17, column=4)
 tk.Label(app, text="Inserire la soglia target").grid(row=18, column=4)
 entryF3Param2 = tk.Entry()
 entryF3Param2.grid(row=17, column=5)

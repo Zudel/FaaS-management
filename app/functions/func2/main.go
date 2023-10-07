@@ -2,14 +2,24 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"strconv"
-	"strings"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/go-redis/redis/v7"
 )
+
+func createVector(n int) []int {
+	rand.Seed(time.Now().UnixNano())
+	arr := make([]int, n)
+	for i := range arr {
+		arr[i] = rand.Intn(100000)
+	}
+	return arr
+}
 
 func knapsackRecursive(values []int, weights []int, capacity int, n int) int {
 	if n == 0 || capacity == 0 {
@@ -31,45 +41,6 @@ func max(a, b int) int {
 	return b
 }
 
-func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	param1 := request.QueryStringParameters["param1"]
-	param2 := request.QueryStringParameters["param2"]
-	param3 := request.QueryStringParameters["param3"]
-
-	set := convertToIntArray(param1)
-	weights := convertToIntArray(param2)
-	capacity, _ := strconv.Atoi(param3)
-	fmt.Println("Running on AWS Lambda")
-	// Controlla se il codice sta eseguendo su AWS Lambda o in locale
-
-	maxValue := knapsackRecursive(set, weights, capacity, len(set))
-	responseBody := fmt.Sprintf("Maximum value: %d\n", maxValue)
-
-	return events.APIGatewayProxyResponse{Body: responseBody, StatusCode: 200}, nil
-}
-
-func convertToIntArray(numbersStr string) []int {
-	// Dividi la stringa in una slice di stringhe utilizzando uno spazio come delimitatore
-	numberStrSlice := strings.Split(numbersStr, " ")
-
-	// Dichiarazione di un array di interi
-	var intArray []int
-
-	// Itera attraverso la slice di stringhe e converte ciascuna in un intero
-	for _, str := range numberStrSlice {
-		num, err := strconv.Atoi(str)
-		if err != nil {
-			fmt.Printf("Errore durante la conversione di %s in int: %v\n", str, err)
-			os.Exit(1)
-		}
-		intArray = append(intArray, num)
-	}
-
-	// Stampare l'array di interi
-	fmt.Println(intArray)
-	return intArray
-}
-
 func main() {
 	// Controlla se il codice sta eseguendo su AWS Lambda o in locale
 	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
@@ -82,21 +53,42 @@ func main() {
 		})
 
 		defer client.Close()
-		val1, err := client.HGet("fastest_sorting_algorithm", "param1").Result()
-		val2, err := client.HGet("fastest_sorting_algorithm", "param2").Result()
-		val3, err := client.HGet("fastest_sorting_algorithm", "param3").Result()
+		val1, _ := client.HGet("knapsack", "param1K").Result()       //cap
+		numObjects, _ := client.HGet("knapsack", "param2K").Result() //objects of knapsack
 		fmt.Println("valore passato: ", val1)
-		fmt.Println("valore passato: ", val2)
-		fmt.Println("valore passato: ", val3)
-		set := convertToIntArray(val1) //controllare con la gui, so sballati
-		weights := convertToIntArray(val2)
-		capacity, _ := strconv.Atoi(val3)
+		fmt.Println("valore passato: ", numObjects)
+		val1Int, _ := strconv.Atoi(val1)
+		numObjectsInt, _ := strconv.Atoi(numObjects)
+		set := createVector(numObjectsInt)
+		weights := createVector(numObjectsInt)
+		capacity := val1Int
 
-		if err != nil {
-			panic(err)
+		maxValue := knapsackRecursive(set, weights, capacity, numObjectsInt)
+		fmt.Sprintf("Maximum value: %d\n with capacity: %d and number of objects %d", maxValue, capacity, numObjectsInt)
+		messaggio := "Maximum value: " + strconv.Itoa(maxValue) + " with capacity: " + strconv.Itoa(capacity) + " and number of objects " + strconv.Itoa(numObjectsInt)
+
+		err2 := client.Publish("canale2", messaggio).Err()
+		if err2 != nil {
+			panic(err2)
 		}
-
-		maxValue := knapsackRecursive(set, weights, capacity, len(set))
-		fmt.Printf("Maximum value: %d\n", maxValue)
 	}
+}
+
+func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	param1 := request.QueryStringParameters["param1"] //cap
+	param2 := request.QueryStringParameters["param2"] //objects of knapsack
+	fmt.Println("valore passato: ", param1)
+	fmt.Println("valore passato: ", param2)
+	param1Int, _ := strconv.Atoi(param1)
+	numObjects, _ := strconv.Atoi(param2)
+	set := createVector(numObjects)
+	weights := createVector(numObjects)
+	capacity := param1Int
+	fmt.Println("Running on AWS Lambda")
+	// Controlla se il codice sta eseguendo su AWS Lambda o in locale
+
+	maxValue := knapsackRecursive(set, weights, capacity, numObjects)
+	responseBody := fmt.Sprintf("Maximum value: %d\n with capacity: %s and number of objects %s", maxValue, param1, param2)
+
+	return events.APIGatewayProxyResponse{Body: responseBody, StatusCode: 200}, nil
 }

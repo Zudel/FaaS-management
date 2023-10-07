@@ -140,6 +140,9 @@ func main() { //l'unico parametro che viene passato è la dimensione dell'array
 
 func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	param1 := request.QueryStringParameters["param1"]
+	//come prendere il valore di param1 da redis
+
+	fmt.Println("valore passato: ", param1)
 	val, _ = strconv.Atoi(param1)
 	rand.Seed(time.Now().UnixNano())
 	arr := make([]int, val)

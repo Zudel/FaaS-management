@@ -2,13 +2,30 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/go-redis/redis/v7"
 )
+
+var val1Int int
+var val2Int int
+var messaggio string
+
+func createVector(n int) []int {
+	rand.Seed(time.Now().UnixNano())
+	arr := make([]int, n)
+	for i := range arr {
+		arr[i] = rand.Intn(100000)
+	}
+	return arr
+}
 
 func subsetSumNaive(set []int, n, target, index int) bool {
 	if target == 0 {
@@ -30,8 +47,34 @@ func subsetSumNaive(set []int, n, target, index int) bool {
 }
 
 func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	set := []int{35, 34, 54, 11, 12, 13, 14, 20, 2, 91, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 55, 878, 54}
-	target := 10000
+	// Decodifica il JSON dal campo Body
+	var inputData map[string]string
+	if err := json.Unmarshal([]byte(request.Body), &inputData); err != nil {
+		return events.APIGatewayProxyResponse{
+			StatusCode: 400,
+			Body:       "Errore nella decodifica del JSON di input",
+		}, err
+	}
+
+	// Accedi ai parametri dal JSON
+	param1, exists1 := inputData["param1"]
+	param2, exists2 := inputData["param2"]
+
+	if !exists1 || !exists2 {
+		return events.APIGatewayProxyResponse{
+			StatusCode: 400,
+			Body:       "Parametri mancanti nel JSON di input",
+		}, nil
+	}
+
+	// Puoi ora utilizzare "param1" e "param2" nella tua logica di elaborazione
+	fmt.Println("Param1:", param1)
+	fmt.Println("Param2:", param2)
+	val1Int, _ = strconv.Atoi(param1) // numero di elementi
+	val2Int, _ = strconv.Atoi(param2) // target
+
+	set := createVector(val1Int)
+	target := val2Int
 
 	// Crea un contesto con timeout di 5 secondi
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -40,16 +83,18 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	resultCh := make(chan bool)
 
 	go func() {
-		result := subsetSumNaive(set, len(set), target, 0)
+		result := subsetSumNaive(set, val1Int, target, 0)
 		resultCh <- result
 	}()
 
 	select {
 	case result := <-resultCh:
 		if result {
-			return events.APIGatewayProxyResponse{Body: "Subset with sum exists", StatusCode: 200}, nil
+			responseBody := fmt.Sprintf("Subset with target %d exists with vector size %d", target, val1Int)
+			return events.APIGatewayProxyResponse{Body: responseBody, StatusCode: 200}, nil
 		} else {
-			return events.APIGatewayProxyResponse{Body: "No subset with sum", StatusCode: 200}, nil
+			responseBody := fmt.Sprintf("No subset with target %d exists with vector size %d", target, val1Int)
+			return events.APIGatewayProxyResponse{Body: responseBody, StatusCode: 200}, nil
 		}
 	case <-ctx.Done():
 		return events.APIGatewayProxyResponse{Body: "Timeout reached", StatusCode: 500}, nil
@@ -62,13 +107,38 @@ func main() {
 		lambda.Start(handler)
 	} else {
 		fmt.Println("Running locally")
+		client := redis.NewClient(&redis.Options{
+			Addr: "172.17.0.2:6379",
+			DB:   0, // use default DB
+		})
 
-		// Esegui il codice localmente
-		response, err := handler(events.APIGatewayProxyRequest{})
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
+		defer client.Close()
+		val1, err := client.HGet("subset_sum", "param1S").Result()
+		val1Int, _ := strconv.Atoi(val1) //dimensione vettore
+		vector := createVector(val1Int)  // numero di elementi
+		val2, err2 := client.HGet("subset_sum", "param2S").Result()
+		val2Int, _ := strconv.Atoi(val2) // target
+
+		fmt.Println("valore passato: ", val1Int)
+		fmt.Println("valore passato: ", val2Int)
+
+		if err != nil || err2 != nil {
+			panic(err)
 		}
-		fmt.Println("Response:", response.Body)
+
+		result := subsetSumNaive(vector, val1Int, val2Int, 0)
+
+		if result {
+			fmt.Printf("Subset with sum exists")
+			messaggio = " subset with sum  EXISTS with vector size " + strconv.Itoa(val1Int) + " and target " + strconv.Itoa(val2Int)
+		} else {
+			fmt.Printf("No subset with sum")
+			messaggio = "No subset with sum with vector size " + strconv.Itoa(val1Int) + " and target " + strconv.Itoa(val2Int)
+		}
+
+		err3 := client.Publish("canale3", messaggio).Err()
+		if err3 != nil {
+			panic(err3)
+		}
 	}
 }
