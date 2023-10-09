@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -46,39 +45,23 @@ func subsetSumNaive(set []int, n, target, index int) bool {
 	return subsetSumNaive(set, n, target, index+1)
 }
 
-func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	// Decodifica il JSON dal campo Body
-	var inputData map[string]string
-	if err := json.Unmarshal([]byte(request.Body), &inputData); err != nil {
-		return events.APIGatewayProxyResponse{
-			StatusCode: 400,
-			Body:       "Errore nella decodifica del JSON di input",
-		}, err
-	}
+type MyEvent struct {
+	Name   string `json:""`
+	Param1 string `json:"param1"`
+	Param2 string `json:"param2"`
+}
 
-	// Accedi ai parametri dal JSON
-	param1, exists1 := inputData["param1"]
-	param2, exists2 := inputData["param2"]
-
-	if !exists1 || !exists2 {
-		return events.APIGatewayProxyResponse{
-			StatusCode: 400,
-			Body:       "Parametri mancanti nel JSON di input",
-		}, nil
-	}
-
+func handler(ctx context.Context, event MyEvent) (events.APIGatewayProxyResponse, error) {
+	param1 := event.Param1
+	param2 := event.Param2
 	// Puoi ora utilizzare "param1" e "param2" nella tua logica di elaborazione
 	fmt.Println("Param1:", param1)
 	fmt.Println("Param2:", param2)
-	val1Int, _ = strconv.Atoi(param1) // numero di elementi
-	val2Int, _ = strconv.Atoi(param2) // target
+	val1Int, _ := strconv.Atoi(param1) // numero di elementi
+	val2Int, _ := strconv.Atoi(param2) // target
 
 	set := createVector(val1Int)
 	target := val2Int
-
-	// Crea un contesto con timeout di 5 secondi
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
 	resultCh := make(chan bool)
 

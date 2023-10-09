@@ -181,20 +181,20 @@ def serveRequest(opzioni_creazione, fooName):
         
         if fooName == "fastest_sorting_algorithm":
             input_data = { #input data for the lambda function like a dictionary
-                'param1': redis_client.hget("fastest_sorting_algorithm", "param1").decode('utf-8')
+                "param1": redis_client.hget("fastest_sorting_algorithm", "param1").decode('utf-8')
         }
         elif fooName == "knapsack":
 
             input_data = { #input data for the lambda function like a dictionary
-                'param1': redis_client.hget("knapsack", "param1K").decode('utf-8') ,       
-                'param2': redis_client.hget("knapsack", "param2K").decode('utf-8')
+                "param1": redis_client.hget("knapsack", "param1K").decode('utf-8') ,       
+                "param2": redis_client.hget("knapsack", "param2K").decode('utf-8')
                 
         }
         else:
             # devo assegnar eil dizionario di redis a input data
             input_data ={
-                'param1': redis_client.hget("subset_sum", "param1S").decode('utf-8') ,
-                'param2': redis_client.hget("subset_sum", "param2S").decode('utf-8')
+                "param1": redis_client.hget("subset_sum", "param1S").decode('utf-8') ,
+                "param2": redis_client.hget("subset_sum", "param2S").decode('utf-8')
             }
         
         try:

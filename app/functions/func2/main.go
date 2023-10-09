@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"os"
@@ -74,9 +75,15 @@ func main() {
 	}
 }
 
-func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	param1 := request.QueryStringParameters["param1"] //cap
-	param2 := request.QueryStringParameters["param2"] //objects of knapsack
+type MyEvent struct {
+	Name   string `json:""`
+	Param1 string `json:"param1"`
+	Param2 string `json:"param2"`
+}
+
+func handler(ctx context.Context, event MyEvent) (events.APIGatewayProxyResponse, error) {
+	param1 := event.Param1
+	param2 := event.Param2
 	fmt.Println("valore passato: ", param1)
 	fmt.Println("valore passato: ", param2)
 	param1Int, _ := strconv.Atoi(param1)

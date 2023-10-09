@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"os"
@@ -138,8 +139,14 @@ func main() { //l'unico parametro che viene passato è la dimensione dell'array
 	}
 }
 
-func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	param1 := request.QueryStringParameters["param1"]
+type MyEvent struct {
+	Name   string `json:""`
+	Param1 string `json:"param1"`
+}
+
+func handler(ctx context.Context, event MyEvent) (events.APIGatewayProxyResponse, error) {
+	param1 := event.Param1
+
 	//come prendere il valore di param1 da redis
 
 	fmt.Println("valore passato: ", param1)
