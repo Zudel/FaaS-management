@@ -63,7 +63,6 @@ def computeThreshold(redis_client, config_data):
                 total_cpu_usage2 = float(redis_client.hget("metrics", "total_cpu_usage"))
                 total_memory_usage2 = float(redis_client.hget("metrics", "total_memory_usage"))
                 number_of_active_containers = int(redis_client.hget("metrics", "number_of_active_containers"))
-                timestamp = float(redis_client.hget("metrics", "timestamp"))
             
                 #get the threshold from json file
                 threshold_cpu = float(config_data["threshold"]["cpu"])
