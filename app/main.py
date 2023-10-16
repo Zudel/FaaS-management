@@ -224,13 +224,13 @@ def serveRequest(opzioni_creazione, fooName):
 
 killThread = False
 lock = threading.Lock()
-thread1 = threading.Thread(target=controller, args=("a"))
+thread1 = threading.Thread(target=controller, args=("a")) #thread for the metrics
 thread1.start()    
-thread2 = threading.Thread(target=controller, args=("b"))
+thread2 = threading.Thread(target=controller, args=("b")) #thread for the cold start
 thread2.start()  
-thread3 = threading.Thread(target=controller, args=("c"))
+thread3 = threading.Thread(target=controller, args=("c")) #thread for the offloading
 thread3.start()
-thread4 = threading.Thread(target=controller, args=("d"))
+thread4 = threading.Thread(target=controller, args=("d")) #thread check the messages from broker message Redis 
 thread4.start()
 
 def on_button_click_function1(): 
@@ -256,7 +256,6 @@ def on_button_click_function2():
         return
     serveRequest(opzioni_creazione, "knapsack") #knapsack NP problem
     
-
 def on_button_click_function3(): #subsetSum NP problem
     global offloading
     param1S = entryF3Param2.get()
