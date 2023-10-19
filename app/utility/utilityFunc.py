@@ -17,11 +17,6 @@ def clerAllContainers(client):
         print(container.name +" container stopped")
         container.remove()
         print(container.name + "container removed")
-    try:
-        os.remove('metrics.csv')
-        print(f"Il file metrics è stato eliminato con successo.")
-    except OSError as e:
-        print(f"Si è verificato un errore durante l'eliminazione del file: {e}")
 
 def verify_container_status(containers):
     f = False
