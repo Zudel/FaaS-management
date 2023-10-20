@@ -46,13 +46,17 @@ def coldStart(containersOffline, redis_client):
                 if container.status == "running" and redis_client.hget("cold_start", container.name) is not None:
                     redis_client.hdel("cold_start", container.name)
                 if container.status == "exited" and redis_client.hget("cold_start", container.name) is not None:
-                    tempo = time.time() - float(redis_client.hget("cold_start", container.name))
-                    if tempo > 20 and container.status != "running":                           #if the container is inactive for more than 20 seconds remove the container
-                        container.remove()
-                        redis_client.hdel("cold_start", container.name)
-                        print("container " + container.name + " removed")
-                        print("tempo di inattività: " + str(tempo) + " secondi")
-                        print("------------------------")
+                    try:
+                        tempo = time.time() - float(redis_client.hget("cold_start", container.name))
+                        if tempo > 20 and container.status != "running":                           #if the container is inactive for more than 20 seconds remove the container
+                            container.remove()
+                            redis_client.hdel("cold_start", container.name)
+                            print("container " + container.name + " removed")
+                            print("tempo di inattività: " + str(tempo) + " secondi")
+                            print("------------------------")
+                    except Exception as e:
+                        print(e)
+                        exit(-1)
 
 def computeThreshold(redis_client, config_data):
                 total_cpu_usage2 = float(redis_client.hget("metrics", "total_cpu_usage"))
