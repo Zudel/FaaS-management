@@ -65,7 +65,7 @@ pubsub.subscribe(sortAlg_Channel)
 def controller(lettera):
     global offloading
     #remove the redis container from the list of containers
-    time.sleep(5)
+    time.sleep(0.5)
     while True:
         try:
             active_containers = client.containers.list(all=False)
@@ -105,6 +105,7 @@ def controller(lettera):
                 print("total memory usage: " + str(total_memory_usage) + "%")
                 print("------------------------")
             #insert the metrics in redis 
+            
             redis_client.hset("metrics", "total_cpu_usage", total_cpu_usage)
             redis_client.hset("metrics", "total_memory_usage", total_memory_usage)
             redis_client.hset("metrics", "number_of_containers", len(containers)-1)
@@ -121,11 +122,11 @@ def controller(lettera):
 
         if (lettera == "c"):
                 try:
+                    time.sleep(1)
                     res = computeThreshold(redis_client, config_data)
                     offloading = res
                 except Exception as e:
-                    print("errore in fase di offloading: "+str(e))
-                    exit(-2)
+                    print("errore nell'attuare la politica di offloading: "+str(e))
         if (lettera == "d"):
             while killThread == False:
                 # check if there are messages in redis broker
